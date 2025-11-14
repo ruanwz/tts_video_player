@@ -64,6 +64,21 @@ python server.py
 
 服务将在 `http://localhost:5000` 启动。
 
+**重要提示：** 如果遇到CORS错误，请确保：
+1. 后端服务正在运行
+2. 使用HTTP服务器打开前端页面（而不是直接双击打开HTML文件）
+
+推荐使用以下方式启动前端：
+```bash
+# 使用Python内置HTTP服务器
+python3 -m http.server 8000
+
+# 然后在浏览器访问
+# http://localhost:8000
+```
+
+这样前端和后端都通过HTTP协议访问，可以避免CORS问题。
+
 ## 配置播放器
 
 1. 打开播放器网页
