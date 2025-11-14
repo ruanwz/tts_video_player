@@ -253,9 +253,9 @@ class TTSVideoPlayer {
             return 1.0;
         }
 
-        // 基准：TTS正常语速下，中文大约每秒3个字（根据实际TTS测试调整）
-        // 1.0倍速 = 3字/秒，这样字幕如果是按3字/秒设计的，就会得到1.0倍速
-        const baseCharsPerSecond = 3.0;
+        // 基准：根据实际测试，TTS在1.0倍速下约2.5字/秒（保守估计）
+        // 这个值偏低是为了确保字幕能读完，留有余量
+        const baseCharsPerSecond = 2.5;
 
         // 计算需要的语速
         const requiredCharsPerSecond = totalChars / duration;
@@ -264,23 +264,23 @@ class TTSVideoPlayer {
         console.log('需要语速(字/秒):', requiredCharsPerSecond.toFixed(2));
         console.log('初始计算语速:', optimalRate.toFixed(2));
 
-        // 限制语速范围在0.7-2.5之间
-        const minRate = 0.7;
+        // 加入安全系数：让语速快20%，确保有时间读完
+        // 这是因为TTS启动、停止都有延迟，实际可用时间比字幕时长短
+        const safetyFactor = 1.2;
+        optimalRate = optimalRate * safetyFactor;
+        console.log('加安全系数(×' + safetyFactor + '):', optimalRate.toFixed(2));
+
+        // 限制语速范围在0.8-2.5之间
+        const minRate = 0.8;
         const maxRate = 2.5;
         optimalRate = Math.max(minRate, Math.min(maxRate, optimalRate));
 
         console.log('范围限制后:', optimalRate.toFixed(2));
 
-        // 如果计算出的语速与1.0相差不大（0.85-1.15），则使用1.0保持自然
-        if (optimalRate >= 0.85 && optimalRate <= 1.15) {
+        // 如果计算出的语速与1.0相差不大（0.9-1.15），则使用1.0保持自然
+        if (optimalRate >= 0.9 && optimalRate <= 1.15) {
             console.log('✓ 接近标准语速，归一化为1.0');
             optimalRate = 1.0;
-        }
-        // 如果语速较慢（0.7-0.85），可以稍微加快一点避免太慢
-        else if (optimalRate < 0.85) {
-            const adjusted = Math.min(0.9, optimalRate * 1.1);
-            console.log('✓ 语速较慢，微调从', optimalRate.toFixed(2), '到', adjusted.toFixed(2));
-            optimalRate = adjusted;
         }
 
         console.log('最终语速:', optimalRate.toFixed(2) + 'x');
