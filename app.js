@@ -21,8 +21,14 @@ class TTSVideoPlayer {
         this.settingsModal = document.getElementById('settingsModal');
         this.generateSubtitleBtn = document.getElementById('generateSubtitleBtn');
 
+        // 翻译相关元素
+        this.translateControls = document.getElementById('translateControls');
+        this.targetLanguage = document.getElementById('targetLanguage');
+        this.translateBtn = document.getElementById('translateBtn');
+
         // 状态变量
         this.subtitles = [];
+        this.originalSubtitles = []; // 保存原始字幕
         this.currentSubtitleIndex = -1;
         this.isTTSMode = false;
         this.synth = window.speechSynthesis;
@@ -61,6 +67,10 @@ class TTSVideoPlayer {
         document.getElementById('testBackendBtn').addEventListener('click', () => this.testBackend());
         document.getElementById('testToolsBtn').addEventListener('click', () => this.testTools());
         this.generateSubtitleBtn.addEventListener('click', () => this.generateSubtitle());
+
+        // 翻译相关事件
+        this.targetLanguage.addEventListener('change', () => this.onLanguageSelect());
+        this.translateBtn.addEventListener('click', () => this.translateSubtitles());
 
         // 初始化TTS
         this.initTTS();
@@ -157,13 +167,17 @@ class TTSVideoPlayer {
                 }
 
                 this.subtitles = subtitles;
+                this.originalSubtitles = JSON.parse(JSON.stringify(subtitles)); // 深拷贝保存原始字幕
 
                 if (subtitles.length === 0) {
                     this.showStatus(`字幕解析失败，请检查文件格式`, 'error');
                     this.subtitleFileName.textContent = '';
+                    this.translateControls.style.display = 'none';
                 } else {
                     // 更新UI显示字幕文件名
                     this.subtitleFileName.textContent = `✓ ${file.name}`;
+                    // 显示翻译控件
+                    this.translateControls.style.display = 'flex';
                 }
             };
             reader.readAsText(file);
@@ -705,10 +719,13 @@ class TTSVideoPlayer {
                     // 解析生成的字幕
                     const subtitles = this.parseVTT(result.subtitle);
                     this.subtitles = subtitles;
+                    this.originalSubtitles = JSON.parse(JSON.stringify(subtitles)); // 保存原始字幕
                     this.showStatus(`✓ 字幕生成成功！共 ${subtitles.length} 条字幕`);
 
                     // 更新UI显示已生成字幕
                     this.subtitleFileName.textContent = `✓ 已自动生成字幕 (${subtitles.length} 条)`;
+                    // 显示翻译控件
+                    this.translateControls.style.display = 'flex';
                 } else {
                     this.showStatus('字幕生成失败: ' + result.error, 'error');
                 }
@@ -724,6 +741,121 @@ class TTSVideoPlayer {
             this.generateSubtitleBtn.disabled = false;
             this.generateSubtitleBtn.textContent = '🤖 自动生成字幕';
         }
+    }
+
+    // ========== 字幕翻译功能 ==========
+
+    // 当用户选择目标语言时
+    onLanguageSelect() {
+        const language = this.targetLanguage.value;
+        this.translateBtn.disabled = !language;
+    }
+
+    // 翻译字幕
+    async translateSubtitles() {
+        const targetLang = this.targetLanguage.value;
+        if (!targetLang || this.originalSubtitles.length === 0) {
+            this.showStatus('请先选择目标语言', 'error');
+            return;
+        }
+
+        // 禁用按钮
+        this.translateBtn.disabled = true;
+        this.translateBtn.textContent = '⏳ 翻译中...';
+        this.showStatus(`正在翻译 ${this.originalSubtitles.length} 条字幕到 ${this.getLanguageName(targetLang)}...`);
+
+        try {
+            // 翻译所有字幕
+            const translatedSubtitles = [];
+            let successCount = 0;
+            let failCount = 0;
+
+            for (let i = 0; i < this.originalSubtitles.length; i++) {
+                const subtitle = this.originalSubtitles[i];
+
+                try {
+                    const translatedText = await this.translateText(subtitle.text, targetLang);
+                    translatedSubtitles.push({
+                        ...subtitle,
+                        text: translatedText
+                    });
+                    successCount++;
+
+                    // 更新进度
+                    if ((i + 1) % 5 === 0 || i === this.originalSubtitles.length - 1) {
+                        this.showStatus(`翻译进度: ${i + 1}/${this.originalSubtitles.length} (成功: ${successCount}, 失败: ${failCount})`);
+                    }
+
+                    // 避免API限流，每5条字幕暂停一下
+                    if ((i + 1) % 5 === 0 && i < this.originalSubtitles.length - 1) {
+                        await this.sleep(1000); // 暂停1秒
+                    }
+                } catch (e) {
+                    console.error(`翻译第 ${i + 1} 条字幕失败:`, e);
+                    // 翻译失败时使用原文
+                    translatedSubtitles.push(subtitle);
+                    failCount++;
+                }
+            }
+
+            // 更新字幕
+            this.subtitles = translatedSubtitles;
+            this.showStatus(`✓ 翻译完成！成功 ${successCount} 条，失败 ${failCount} 条`);
+
+            // 更新UI显示
+            this.subtitleFileName.textContent = `✓ 已翻译为${this.getLanguageName(targetLang)} (${successCount} 条)`;
+
+        } catch (e) {
+            console.error('翻译出错:', e);
+            this.showStatus('翻译失败: ' + e.message, 'error');
+        } finally {
+            // 恢复按钮
+            this.translateBtn.disabled = false;
+            this.translateBtn.textContent = '🌐 翻译字幕';
+        }
+    }
+
+    // 翻译单条文本（使用免费的MyMemory API）
+    async translateText(text, targetLang) {
+        // 使用MyMemory Translation API（免费，每天1000次请求限制）
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=auto|${targetLang}`;
+
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.responseStatus === 200 && data.responseData) {
+                return data.responseData.translatedText;
+            } else {
+                throw new Error('翻译API返回错误');
+            }
+        } catch (e) {
+            console.error('翻译文本失败:', e);
+            // 如果翻译失败，返回原文
+            return text;
+        }
+    }
+
+    // 获取语言名称
+    getLanguageName(langCode) {
+        const langNames = {
+            'zh-CN': '中文（简体）',
+            'zh-TW': '中文（繁体）',
+            'en': '英语',
+            'ja': '日语',
+            'ko': '韩语',
+            'es': '西班牙语',
+            'fr': '法语',
+            'de': '德语',
+            'ru': '俄语',
+            'ar': '阿拉伯语'
+        };
+        return langNames[langCode] || langCode;
+    }
+
+    // 延迟函数
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
 

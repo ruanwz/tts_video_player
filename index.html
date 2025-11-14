@@ -23,6 +23,22 @@
                 <label for="subtitleFile">选择字幕文件 (SRT/VTT):</label>
                 <input type="file" id="subtitleFile" accept=".srt,.vtt">
                 <span id="subtitleFileName" class="file-name-display"></span>
+                <div class="translate-controls" id="translateControls" style="display: none;">
+                    <select id="targetLanguage" class="language-select">
+                        <option value="">选择目标语言</option>
+                        <option value="zh-CN">中文（简体）</option>
+                        <option value="zh-TW">中文（繁体）</option>
+                        <option value="en">英语</option>
+                        <option value="ja">日语</option>
+                        <option value="ko">韩语</option>
+                        <option value="es">西班牙语</option>
+                        <option value="fr">法语</option>
+                        <option value="de">德语</option>
+                        <option value="ru">俄语</option>
+                        <option value="ar">阿拉伯语</option>
+                    </select>
+                    <button id="translateBtn" class="translate-btn" disabled>🌐 翻译字幕</button>
+                </div>
             </div>
         </div>
 
