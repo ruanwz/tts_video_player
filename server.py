@@ -83,6 +83,7 @@ def transcribe_audio(audio_path, output_dir, whisper_path, model_path, language=
         ]
 
         logger.info(f"转录音频: {' '.join(command)}")
+        logger.info(f"工作目录: {output_dir.resolve()}")
 
         # 运行whisper.cpp
         result = subprocess.run(
@@ -93,19 +94,44 @@ def transcribe_audio(audio_path, output_dir, whisper_path, model_path, language=
             timeout=3600  # 1小时超时
         )
 
+        # 记录输出信息
+        if result.stdout:
+            logger.info(f"whisper输出: {result.stdout[:500]}")  # 只记录前500字符
+        if result.stderr:
+            logger.info(f"whisper错误流: {result.stderr[:500]}")
+
         if result.returncode != 0:
-            logger.error(f"whisper错误: {result.stderr}")
+            logger.error(f"whisper执行失败，返回码: {result.returncode}")
             return None
+
+        # 列出工作目录中的所有文件
+        logger.info(f"工作目录中的文件: {list(output_dir.glob('*'))}")
 
         # 查找生成的VTT文件
+        # whisper.cpp可能生成 {audio_name}.wav.vtt 而不是 {audio_name}.vtt
         audio_name = audio_path.stem
-        vtt_file = output_dir / f"{audio_name}.vtt"
 
-        if vtt_file.exists():
-            return vtt_file
-        else:
-            logger.error(f"未找到生成的VTT文件: {vtt_file}")
-            return None
+        # 尝试多种可能的文件名
+        possible_names = [
+            output_dir / f"{audio_name}.vtt",
+            output_dir / f"{audio_path.name}.vtt",  # 包含扩展名的完整名称
+            output_dir / f"{audio_name}.wav.vtt",
+        ]
+
+        # 也搜索所有.vtt文件
+        vtt_files = list(output_dir.glob('*.vtt'))
+        if vtt_files:
+            logger.info(f"找到VTT文件: {vtt_files}")
+            return vtt_files[0]  # 返回第一个找到的VTT文件
+
+        # 尝试可能的文件名
+        for vtt_file in possible_names:
+            if vtt_file.exists():
+                logger.info(f"找到VTT文件: {vtt_file}")
+                return vtt_file
+
+        logger.error(f"未找到生成的VTT文件，尝试过的文件名: {possible_names}")
+        return None
 
     except subprocess.TimeoutExpired:
         logger.error("whisper超时")
