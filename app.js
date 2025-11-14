@@ -246,30 +246,44 @@ class TTSVideoPlayer {
         console.log('标点符号:', punctuation);
         console.log('总字符数:', totalChars);
 
-        // 基准：正常语速下，中文大约每秒4-5个字
-        const baseCharsPerSecond = 4.5;
+        // 防止除以0或无效数据
+        if (duration <= 0 || totalChars < 1) {
+            console.log('⚠️ 无效数据，使用默认语速1.0');
+            console.log('==================');
+            return 1.0;
+        }
+
+        // 基准：TTS正常语速下，中文大约每秒3个字（根据实际TTS测试调整）
+        // 1.0倍速 = 3字/秒，这样字幕如果是按3字/秒设计的，就会得到1.0倍速
+        const baseCharsPerSecond = 3.0;
 
         // 计算需要的语速
         const requiredCharsPerSecond = totalChars / duration;
         let optimalRate = requiredCharsPerSecond / baseCharsPerSecond;
 
-        console.log('需要语速(字/秒):', requiredCharsPerSecond);
-        console.log('初始计算语速:', optimalRate);
+        console.log('需要语速(字/秒):', requiredCharsPerSecond.toFixed(2));
+        console.log('初始计算语速:', optimalRate.toFixed(2));
 
-        // 限制语速范围在0.8-2.5之间
-        optimalRate = Math.max(0.8, Math.min(2.5, optimalRate));
+        // 限制语速范围在0.7-2.5之间
+        const minRate = 0.7;
+        const maxRate = 2.5;
+        optimalRate = Math.max(minRate, Math.min(maxRate, optimalRate));
 
-        // 如果计算出的语速与1.0相差不大（0.9-1.1），则使用1.0
-        if (optimalRate >= 0.9 && optimalRate <= 1.1) {
+        console.log('范围限制后:', optimalRate.toFixed(2));
+
+        // 如果计算出的语速与1.0相差不大（0.85-1.15），则使用1.0保持自然
+        if (optimalRate >= 0.85 && optimalRate <= 1.15) {
+            console.log('✓ 接近标准语速，归一化为1.0');
             optimalRate = 1.0;
         }
-
-        // 如果时间充裕（低于0.9倍速），使用稍慢的语速使其更自然
-        if (optimalRate < 0.9) {
-            optimalRate = Math.max(0.8, optimalRate * 1.05);
+        // 如果语速较慢（0.7-0.85），可以稍微加快一点避免太慢
+        else if (optimalRate < 0.85) {
+            const adjusted = Math.min(0.9, optimalRate * 1.1);
+            console.log('✓ 语速较慢，微调从', optimalRate.toFixed(2), '到', adjusted.toFixed(2));
+            optimalRate = adjusted;
         }
 
-        console.log('最终语速:', optimalRate);
+        console.log('最终语速:', optimalRate.toFixed(2) + 'x');
         console.log('==================');
 
         return optimalRate;
