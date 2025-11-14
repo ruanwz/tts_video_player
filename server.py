@@ -15,7 +15,15 @@ import json
 import logging
 
 app = Flask(__name__)
-CORS(app)  # 允许跨域请求
+# 允许跨域请求 - 支持所有来源（包括file://协议）
+CORS(app, resources={
+    r"/api/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"],
+        "supports_credentials": False
+    }
+})
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
