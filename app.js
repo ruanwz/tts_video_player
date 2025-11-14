@@ -815,24 +815,87 @@ class TTSVideoPlayer {
         }
     }
 
-    // 翻译单条文本（使用免费的MyMemory API）
+    // 翻译单条文本（使用多个翻译服务，自动降级）
     async translateText(text, targetLang) {
-        // 使用MyMemory Translation API（免费，每天1000次请求限制）
+        // 方案1: 使用LibreTranslate（开源免费）
+        try {
+            return await this.translateWithLibre(text, targetLang);
+        } catch (e) {
+            console.warn('LibreTranslate翻译失败，尝试MyMemory:', e);
+        }
+
+        // 方案2: 使用MyMemory（备选）
+        try {
+            return await this.translateWithMyMemory(text, targetLang);
+        } catch (e) {
+            console.warn('MyMemory翻译失败:', e);
+        }
+
+        // 所有方案都失败，返回原文
+        console.error('所有翻译服务都失败，使用原文');
+        return text;
+    }
+
+    // LibreTranslate API（开源免费，更稳定）
+    async translateWithLibre(text, targetLang) {
+        // 使用公共LibreTranslate实例
+        const url = 'https://libretranslate.de/translate';
+
+        // 语言代码转换（LibreTranslate使用ISO 639-1标准）
+        const langMap = {
+            'zh-CN': 'zh',
+            'zh-TW': 'zh',
+            'en': 'en',
+            'ja': 'ja',
+            'ko': 'ko',
+            'es': 'es',
+            'fr': 'fr',
+            'de': 'de',
+            'ru': 'ru',
+            'ar': 'ar'
+        };
+
+        const target = langMap[targetLang] || targetLang.split('-')[0];
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                q: text,
+                source: 'auto',
+                target: target,
+                format: 'text'
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`LibreTranslate HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (data.translatedText) {
+            return data.translatedText;
+        } else {
+            throw new Error('LibreTranslate响应无效');
+        }
+    }
+
+    // MyMemory API（备选方案）
+    async translateWithMyMemory(text, targetLang) {
         const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=auto|${targetLang}`;
 
-        try {
-            const response = await fetch(url);
-            const data = await response.json();
+        const response = await fetch(url);
+        const data = await response.json();
 
-            if (data.responseStatus === 200 && data.responseData) {
-                return data.responseData.translatedText;
-            } else {
-                throw new Error('翻译API返回错误');
-            }
-        } catch (e) {
-            console.error('翻译文本失败:', e);
-            // 如果翻译失败，返回原文
-            return text;
+        // MyMemory API响应格式检查
+        if (data.responseData && data.responseData.translatedText) {
+            return data.responseData.translatedText;
+        } else {
+            console.warn('MyMemory API响应格式异常:', data);
+            throw new Error('MyMemory翻译失败');
         }
     }
 
