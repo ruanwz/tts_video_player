@@ -178,10 +178,15 @@ class TTSVideoPlayer {
         const lines = vttContent.split('\n');
         let i = 0;
 
-        // 跳过WEBVTT头部
+        console.log('开始解析VTT字幕...');
+        console.log('总行数:', lines.length);
+
+        // 跳过WEBVTT头部和元数据
         while (i < lines.length && !lines[i].includes('-->')) {
             i++;
         }
+
+        console.log('找到第一个时间轴行:', i);
 
         while (i < lines.length) {
             const line = lines[i].trim();
@@ -189,21 +194,29 @@ class TTSVideoPlayer {
             // 查找时间轴行
             if (line.includes('-->')) {
                 // VTT格式: 00:00:00.000 --> 00:00:03.000
-                const timeMatch = line.match(/(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})/);
+                // 毫秒部分可以是1-3位数字，使用\d{1,3}来匹配
+                const timeMatch = line.match(/(\d{2}):(\d{2}):(\d{2})\.(\d{1,3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})\.(\d{1,3})/);
 
                 if (timeMatch) {
+                    // 确保毫秒部分是3位（补齐0）
+                    const startMs = timeMatch[4].padEnd(3, '0');
+                    const endMs = timeMatch[8].padEnd(3, '0');
+
                     const startTime = this.timeToSeconds(
                         parseInt(timeMatch[1]),
                         parseInt(timeMatch[2]),
                         parseInt(timeMatch[3]),
-                        parseInt(timeMatch[4])
+                        parseInt(startMs)
                     );
                     const endTime = this.timeToSeconds(
                         parseInt(timeMatch[5]),
                         parseInt(timeMatch[6]),
                         parseInt(timeMatch[7]),
-                        parseInt(timeMatch[8])
+                        parseInt(endMs)
                     );
+
+                    console.log(`时间轴: ${timeMatch[0]}`);
+                    console.log(`  开始: ${startTime.toFixed(3)}s, 结束: ${endTime.toFixed(3)}s`);
 
                     // 收集字幕文本（可能多行）
                     i++;
@@ -225,12 +238,16 @@ class TTSVideoPlayer {
                             end: endTime,
                             text: text
                         });
+                        console.log(`  文本: ${text}`);
                     }
+                } else {
+                    console.warn('时间轴格式不匹配:', line);
                 }
             }
             i++;
         }
 
+        console.log(`VTT解析完成，共解析 ${subtitles.length} 条字幕`);
         return subtitles;
     }
 
