@@ -103,8 +103,31 @@ class TTSVideoPlayer {
         if (file) {
             const reader = new FileReader();
             reader.onload = (e) => {
-                this.subtitles = this.parseSRT(e.target.result);
-                this.showStatus(`字幕已加载: ${file.name}，共 ${this.subtitles.length} 条字幕`);
+                const content = e.target.result;
+                const fileName = file.name.toLowerCase();
+
+                // 根据文件扩展名或内容自动检测格式
+                let subtitles = [];
+                if (fileName.endsWith('.vtt') || content.trim().startsWith('WEBVTT')) {
+                    subtitles = this.parseVTT(content);
+                    this.showStatus(`VTT字幕已加载: ${file.name}，共 ${subtitles.length} 条字幕`);
+                } else if (fileName.endsWith('.srt')) {
+                    subtitles = this.parseSRT(content);
+                    this.showStatus(`SRT字幕已加载: ${file.name}，共 ${subtitles.length} 条字幕`);
+                } else {
+                    // 尝试自动检测
+                    subtitles = this.parseVTT(content);
+                    if (subtitles.length === 0) {
+                        subtitles = this.parseSRT(content);
+                    }
+                    this.showStatus(`字幕已加载: ${file.name}，共 ${subtitles.length} 条字幕`);
+                }
+
+                this.subtitles = subtitles;
+
+                if (subtitles.length === 0) {
+                    this.showStatus(`字幕解析失败，请检查文件格式`, 'error');
+                }
             };
             reader.readAsText(file);
         }
@@ -145,6 +168,68 @@ class TTSVideoPlayer {
                 }
             }
         });
+
+        return subtitles;
+    }
+
+    // 解析VTT字幕格式
+    parseVTT(vttContent) {
+        const subtitles = [];
+        const lines = vttContent.split('\n');
+        let i = 0;
+
+        // 跳过WEBVTT头部
+        while (i < lines.length && !lines[i].includes('-->')) {
+            i++;
+        }
+
+        while (i < lines.length) {
+            const line = lines[i].trim();
+
+            // 查找时间轴行
+            if (line.includes('-->')) {
+                // VTT格式: 00:00:00.000 --> 00:00:03.000
+                const timeMatch = line.match(/(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})/);
+
+                if (timeMatch) {
+                    const startTime = this.timeToSeconds(
+                        parseInt(timeMatch[1]),
+                        parseInt(timeMatch[2]),
+                        parseInt(timeMatch[3]),
+                        parseInt(timeMatch[4])
+                    );
+                    const endTime = this.timeToSeconds(
+                        parseInt(timeMatch[5]),
+                        parseInt(timeMatch[6]),
+                        parseInt(timeMatch[7]),
+                        parseInt(timeMatch[8])
+                    );
+
+                    // 收集字幕文本（可能多行）
+                    i++;
+                    const textLines = [];
+                    while (i < lines.length && lines[i].trim() !== '') {
+                        const textLine = lines[i].trim();
+                        // 过滤VTT样式标签 <v Name> 等
+                        const cleanText = textLine.replace(/<[^>]+>/g, '').trim();
+                        if (cleanText) {
+                            textLines.push(cleanText);
+                        }
+                        i++;
+                    }
+
+                    const text = textLines.join(' ').trim();
+                    if (text) {
+                        subtitles.push({
+                            start: startTime,
+                            end: endTime,
+                            text: text
+                        });
+                    }
+                }
+            }
+            i++;
+        }
 
         return subtitles;
     }
