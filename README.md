@@ -23,6 +23,16 @@
 
 ## 使用方法
 
+### 快速开始 - 在线使用
+
+你可以直接访问已部署的 GitHub Pages 版本，无需下载任何文件：
+
+**👉 [在线使用 TTS 字幕视频播放器](https://ruanwz.github.io/tts_video_player/)**
+
+> 注意：在线版本只包含静态文件（HTML/CSS/JS），不包含后端服务。如需使用自动生成字幕功能，请参考[后端服务说明](BACKEND_README.md)在本地运行。
+
+### 本地使用
+
 ### 1. 启动播放器
 
 直接在浏览器中打开 `index.html` 文件：
@@ -234,6 +244,49 @@ tts_video_player/
 ├── README.md           # 主文档
 └── BACKEND_README.md   # 后端服务文档（可选）
 ```
+
+## 部署到 GitHub Pages
+
+要将此项目部署到 GitHub Pages 供公开访问：
+
+### 方法1：使用 gh-pages 分支（推荐）
+
+1. 创建并切换到 gh-pages 分支：
+   ```bash
+   git checkout -b gh-pages
+   ```
+
+2. 推送到远程仓库：
+   ```bash
+   git push -u origin gh-pages
+   ```
+
+3. 在 GitHub 仓库设置中：
+   - 进入 Settings > Pages
+   - Source 选择 "gh-pages" 分支
+   - Directory 选择 "/ (root)"
+   - 点击 Save
+
+4. 等待几分钟后，访问 `https://你的用户名.github.io/tts_video_player/`
+
+### 方法2：从主分支部署
+
+1. 确保所有更改已提交到主分支（main 或 master）
+
+2. 在 GitHub 仓库设置中：
+   - 进入 Settings > Pages
+   - Source 选择你的主分支（main/master）
+   - Directory 选择 "/ (root)"
+   - 点击 Save
+
+3. 访问 `https://你的用户名.github.io/tts_video_player/`
+
+### 注意事项
+
+- GitHub Pages 只能托管静态文件（HTML/CSS/JS）
+- 后端服务（server.py）不会在 GitHub Pages 上运行
+- 自动生成字幕功能需要在本地环境使用
+- 所有核心功能（视频播放、TTS、字幕显示）都能正常工作
 
 ## 未来改进
 
