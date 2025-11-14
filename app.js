@@ -237,12 +237,24 @@ class TTSVideoPlayer {
         // 总字符数估算（中文字符 + 英文单词 + 标点符号权重）
         const totalChars = chineseChars + englishWords * 0.7 + punctuation * 0.3;
 
+        // 调试信息
+        console.log('=== 智能语速计算 ===');
+        console.log('字幕文本:', text);
+        console.log('显示时长:', duration, '秒');
+        console.log('中文字符:', chineseChars);
+        console.log('英文单词:', englishWords);
+        console.log('标点符号:', punctuation);
+        console.log('总字符数:', totalChars);
+
         // 基准：正常语速下，中文大约每秒4-5个字
         const baseCharsPerSecond = 4.5;
 
         // 计算需要的语速
         const requiredCharsPerSecond = totalChars / duration;
         let optimalRate = requiredCharsPerSecond / baseCharsPerSecond;
+
+        console.log('需要语速(字/秒):', requiredCharsPerSecond);
+        console.log('初始计算语速:', optimalRate);
 
         // 限制语速范围在0.8-2.5之间
         optimalRate = Math.max(0.8, Math.min(2.5, optimalRate));
@@ -256,6 +268,9 @@ class TTSVideoPlayer {
         if (optimalRate < 0.9) {
             optimalRate = Math.max(0.8, optimalRate * 1.05);
         }
+
+        console.log('最终语速:', optimalRate);
+        console.log('==================');
 
         return optimalRate;
     }
