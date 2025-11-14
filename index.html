@@ -37,9 +37,20 @@
             <div class="tts-controls">
                 <label for="voiceSelect">TTS语音:</label>
                 <select id="voiceSelect"></select>
-                <label for="rateControl">语速:</label>
-                <input type="range" id="rateControl" min="0.5" max="2" step="0.1" value="1">
-                <span id="rateValue">1.0</span>
+
+                <div class="rate-mode-toggle">
+                    <label class="switch">
+                        <input type="checkbox" id="autoRateToggle">
+                        <span class="slider"></span>
+                    </label>
+                    <label for="autoRateToggle">自动调整语速</label>
+                </div>
+
+                <div class="rate-control-group">
+                    <label for="rateControl">语速:</label>
+                    <input type="range" id="rateControl" min="0.5" max="2" step="0.1" value="1">
+                    <span id="rateValue">1.0</span>
+                </div>
             </div>
         </div>
 

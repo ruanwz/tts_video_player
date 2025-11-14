@@ -11,6 +11,8 @@ class TTSVideoPlayer {
         this.voiceSelect = document.getElementById('voiceSelect');
         this.rateControl = document.getElementById('rateControl');
         this.rateValue = document.getElementById('rateValue');
+        this.autoRateToggle = document.getElementById('autoRateToggle');
+        this.rateControlGroup = document.querySelector('.rate-control-group');
         this.statusDiv = document.getElementById('status');
 
         // 状态变量
@@ -21,6 +23,7 @@ class TTSVideoPlayer {
         this.currentUtterance = null;
         this.voices = [];
         this.ttsRate = 1.0;
+        this.isAutoRate = false;
 
         this.init();
     }
@@ -34,6 +37,7 @@ class TTSVideoPlayer {
         this.videoPlayer.addEventListener('pause', () => this.onPause());
         this.videoPlayer.addEventListener('play', () => this.onPlay());
         this.rateControl.addEventListener('input', (e) => this.updateRate(e));
+        this.autoRateToggle.addEventListener('change', (e) => this.toggleAutoRate(e));
 
         // 初始化TTS
         this.initTTS();
@@ -178,7 +182,7 @@ class TTSVideoPlayer {
 
                 // 如果是TTS模式，朗读字幕
                 if (this.isTTSMode && !this.videoPlayer.paused) {
-                    this.speakText(foundSubtitle.text);
+                    this.speakText(foundSubtitle.text, foundSubtitle);
                 }
             } else {
                 this.subtitleDisplay.textContent = '';
@@ -188,7 +192,7 @@ class TTSVideoPlayer {
     }
 
     // TTS朗读文本
-    speakText(text) {
+    speakText(text, subtitle = null) {
         // 停止当前朗读
         this.stopSpeaking();
 
@@ -202,13 +206,58 @@ class TTSVideoPlayer {
             this.currentUtterance.voice = this.voices[selectedVoiceIndex];
         }
 
-        // 设置语速
-        this.currentUtterance.rate = this.ttsRate;
+        // 设置语速 - 自动或手动
+        let rate = this.ttsRate;
+        if (this.isAutoRate && subtitle) {
+            rate = this.calculateOptimalRate(subtitle);
+            // 更新显示的语速值（用绿色表示自动调整）
+            this.rateValue.textContent = rate.toFixed(1);
+            this.rateValue.classList.add('auto');
+        } else {
+            rate = this.ttsRate;
+        }
+        this.currentUtterance.rate = rate;
 
         // 设置音量（TTS模式下）
         this.currentUtterance.volume = 1.0;
 
         this.synth.speak(this.currentUtterance);
+    }
+
+    // 计算最佳语速
+    calculateOptimalRate(subtitle) {
+        const text = subtitle.text;
+        const duration = subtitle.end - subtitle.start; // 字幕显示时长（秒）
+
+        // 计算字符数（中文字符和英文单词）
+        const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+        const englishWords = (text.match(/[a-zA-Z]+/g) || []).length;
+        const punctuation = (text.match(/[，。！？、；：""''（）,.!?;:()"'()]/g) || []).length;
+
+        // 总字符数估算（中文字符 + 英文单词 + 标点符号权重）
+        const totalChars = chineseChars + englishWords * 0.7 + punctuation * 0.3;
+
+        // 基准：正常语速下，中文大约每秒4-5个字
+        const baseCharsPerSecond = 4.5;
+
+        // 计算需要的语速
+        const requiredCharsPerSecond = totalChars / duration;
+        let optimalRate = requiredCharsPerSecond / baseCharsPerSecond;
+
+        // 限制语速范围在0.8-2.5之间
+        optimalRate = Math.max(0.8, Math.min(2.5, optimalRate));
+
+        // 如果计算出的语速与1.0相差不大（0.9-1.1），则使用1.0
+        if (optimalRate >= 0.9 && optimalRate <= 1.1) {
+            optimalRate = 1.0;
+        }
+
+        // 如果时间充裕（低于0.9倍速），使用稍慢的语速使其更自然
+        if (optimalRate < 0.9) {
+            optimalRate = Math.max(0.8, optimalRate * 1.05);
+        }
+
+        return optimalRate;
     }
 
     // 停止TTS朗读
@@ -249,8 +298,26 @@ class TTSVideoPlayer {
         if (this.isTTSMode && this.currentSubtitleIndex >= 0) {
             const currentSubtitle = this.subtitles[this.currentSubtitleIndex];
             if (currentSubtitle) {
-                this.speakText(currentSubtitle.text);
+                this.speakText(currentSubtitle.text, currentSubtitle);
             }
+        }
+    }
+
+    // 切换自动语速
+    toggleAutoRate(event) {
+        this.isAutoRate = event.target.checked;
+
+        if (this.isAutoRate) {
+            // 启用自动语速，禁用手动控制
+            this.rateControlGroup.classList.add('disabled');
+            this.rateValue.classList.add('auto');
+            this.showStatus('已启用自动语速调整，将根据字幕长度和时间动态调整');
+        } else {
+            // 禁用自动语速，启用手动控制
+            this.rateControlGroup.classList.remove('disabled');
+            this.rateValue.classList.remove('auto');
+            this.rateValue.textContent = this.ttsRate.toFixed(1);
+            this.showStatus('已切换到手动语速模式');
         }
     }
 
@@ -258,6 +325,7 @@ class TTSVideoPlayer {
     updateRate(event) {
         this.ttsRate = parseFloat(event.target.value);
         this.rateValue.textContent = this.ttsRate.toFixed(1);
+        this.rateValue.classList.remove('auto');
     }
 
     // 显示状态信息
