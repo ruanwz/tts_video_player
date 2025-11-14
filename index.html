@@ -8,12 +8,16 @@
 </head>
 <body>
     <div class="container">
-        <h1>TTS字幕视频播放器</h1>
+        <div class="header">
+            <h1>TTS字幕视频播放器</h1>
+            <button id="settingsBtn" class="settings-btn" title="设置">⚙️</button>
+        </div>
 
         <div class="upload-section">
             <div class="upload-group">
                 <label for="videoFile">选择视频文件:</label>
                 <input type="file" id="videoFile" accept="video/*">
+                <button id="generateSubtitleBtn" class="generate-btn" style="display: none;">🤖 自动生成字幕</button>
             </div>
             <div class="upload-group">
                 <label for="subtitleFile">选择字幕文件 (SRT/VTT):</label>
@@ -55,6 +59,62 @@
         </div>
 
         <div class="status" id="status"></div>
+    </div>
+
+    <!-- 设置模态框 -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>设置</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <h3>后端服务</h3>
+                    <div class="form-group">
+                        <label for="backendUrl">后端服务地址:</label>
+                        <input type="text" id="backendUrl" value="http://localhost:5000" placeholder="http://localhost:5000">
+                        <small>可选功能，用于自动生成字幕</small>
+                    </div>
+                    <button id="testBackendBtn" class="test-btn">测试连接</button>
+                    <span id="backendStatus" class="status-indicator"></span>
+                </div>
+
+                <div class="settings-section">
+                    <h3>工具路径配置</h3>
+                    <div class="form-group">
+                        <label for="ffmpegPath">FFmpeg路径:</label>
+                        <input type="text" id="ffmpegPath" value="ffmpeg" placeholder="/usr/local/bin/ffmpeg">
+                        <small>用于提取视频音频</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="whisperPath">Whisper.cpp路径:</label>
+                        <input type="text" id="whisperPath" value="whisper" placeholder="/path/to/whisper.cpp/main">
+                        <small>用于语音转文字</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="modelPath">Whisper模型路径:</label>
+                        <input type="text" id="modelPath" value="" placeholder="/path/to/ggml-base.bin">
+                        <small>Whisper模型文件(.bin)</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="languageSelect">默认语言:</label>
+                        <select id="languageSelect">
+                            <option value="auto">自动检测</option>
+                            <option value="zh">中文</option>
+                            <option value="en">英语</option>
+                            <option value="ja">日语</option>
+                            <option value="ko">韩语</option>
+                        </select>
+                    </div>
+                    <button id="testToolsBtn" class="test-btn">测试工具</button>
+                    <div id="toolsStatus" class="tools-status"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="saveSettingsBtn" class="save-btn">保存设置</button>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>

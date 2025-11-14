@@ -15,6 +15,11 @@ class TTSVideoPlayer {
         this.rateControlGroup = document.querySelector('.rate-control-group');
         this.statusDiv = document.getElementById('status');
 
+        // 设置相关元素
+        this.settingsBtn = document.getElementById('settingsBtn');
+        this.settingsModal = document.getElementById('settingsModal');
+        this.generateSubtitleBtn = document.getElementById('generateSubtitleBtn');
+
         // 状态变量
         this.subtitles = [];
         this.currentSubtitleIndex = -1;
@@ -24,6 +29,12 @@ class TTSVideoPlayer {
         this.voices = [];
         this.ttsRate = 1.0;
         this.isAutoRate = false;
+
+        // 上传的视频文件(用于自动生成字幕)
+        this.currentVideoFile = null;
+
+        // 配置
+        this.config = this.loadConfig();
 
         this.init();
     }
@@ -39,8 +50,22 @@ class TTSVideoPlayer {
         this.rateControl.addEventListener('input', (e) => this.updateRate(e));
         this.autoRateToggle.addEventListener('change', (e) => this.toggleAutoRate(e));
 
+        // 设置相关事件
+        this.settingsBtn.addEventListener('click', () => this.openSettings());
+        this.settingsModal.querySelector('.close').addEventListener('click', () => this.closeSettings());
+        this.settingsModal.addEventListener('click', (e) => {
+            if (e.target === this.settingsModal) this.closeSettings();
+        });
+        document.getElementById('saveSettingsBtn').addEventListener('click', () => this.saveSettings());
+        document.getElementById('testBackendBtn').addEventListener('click', () => this.testBackend());
+        document.getElementById('testToolsBtn').addEventListener('click', () => this.testTools());
+        this.generateSubtitleBtn.addEventListener('click', () => this.generateSubtitle());
+
         // 初始化TTS
         this.initTTS();
+
+        // 加载配置到UI
+        this.loadConfigToUI();
 
         this.showStatus('欢迎使用TTS字幕视频播放器！请上传视频和字幕文件。');
     }
@@ -93,6 +118,13 @@ class TTSVideoPlayer {
         if (file) {
             const url = URL.createObjectURL(file);
             this.videoPlayer.src = url;
+            this.currentVideoFile = file;
+
+            // 显示自动生成字幕按钮
+            if (this.config.backendUrl) {
+                this.generateSubtitleBtn.style.display = 'inline-block';
+            }
+
             this.showStatus(`视频已加载: ${file.name}`);
         }
     }
@@ -472,6 +504,218 @@ class TTSVideoPlayer {
         setTimeout(() => {
             this.statusDiv.classList.remove('show');
         }, 3000);
+    }
+
+    // ========== 配置管理 ==========
+
+    // 加载配置
+    loadConfig() {
+        const defaultConfig = {
+            backendUrl: 'http://localhost:5000',
+            ffmpegPath: 'ffmpeg',
+            whisperPath: 'whisper',
+            modelPath: '',
+            language: 'auto'
+        };
+
+        try {
+            const saved = localStorage.getItem('ttsPlayerConfig');
+            return saved ? { ...defaultConfig, ...JSON.parse(saved) } : defaultConfig;
+        } catch (e) {
+            console.error('加载配置失败:', e);
+            return defaultConfig;
+        }
+    }
+
+    // 保存配置
+    saveConfig(config) {
+        try {
+            localStorage.setItem('ttsPlayerConfig', JSON.stringify(config));
+            return true;
+        } catch (e) {
+            console.error('保存配置失败:', e);
+            return false;
+        }
+    }
+
+    // 加载配置到UI
+    loadConfigToUI() {
+        document.getElementById('backendUrl').value = this.config.backendUrl || '';
+        document.getElementById('ffmpegPath').value = this.config.ffmpegPath || 'ffmpeg';
+        document.getElementById('whisperPath').value = this.config.whisperPath || 'whisper';
+        document.getElementById('modelPath').value = this.config.modelPath || '';
+        document.getElementById('languageSelect').value = this.config.language || 'auto';
+    }
+
+    // ========== 设置界面 ==========
+
+    // 打开设置
+    openSettings() {
+        this.settingsModal.classList.add('show');
+    }
+
+    // 关闭设置
+    closeSettings() {
+        this.settingsModal.classList.remove('show');
+    }
+
+    // 保存设置
+    saveSettings() {
+        this.config.backendUrl = document.getElementById('backendUrl').value;
+        this.config.ffmpegPath = document.getElementById('ffmpegPath').value;
+        this.config.whisperPath = document.getElementById('whisperPath').value;
+        this.config.modelPath = document.getElementById('modelPath').value;
+        this.config.language = document.getElementById('languageSelect').value;
+
+        if (this.saveConfig(this.config)) {
+            this.showStatus('设置已保存');
+            this.closeSettings();
+
+            // 如果有视频且配置了后端,显示生成按钮
+            if (this.currentVideoFile && this.config.backendUrl) {
+                this.generateSubtitleBtn.style.display = 'inline-block';
+            }
+        } else {
+            this.showStatus('设置保存失败', 'error');
+        }
+    }
+
+    // 测试后端连接
+    async testBackend() {
+        const backendUrl = document.getElementById('backendUrl').value;
+        const statusEl = document.getElementById('backendStatus');
+
+        if (!backendUrl) {
+            statusEl.textContent = '请输入后端地址';
+            statusEl.className = 'status-indicator error';
+            return;
+        }
+
+        statusEl.textContent = '测试中...';
+        statusEl.className = 'status-indicator warning';
+
+        try {
+            const response = await fetch(`${backendUrl}/api/health`, {
+                method: 'GET',
+                timeout: 5000
+            });
+
+            if (response.ok) {
+                statusEl.textContent = '✓ 连接成功';
+                statusEl.className = 'status-indicator success';
+            } else {
+                statusEl.textContent = '✗ 连接失败';
+                statusEl.className = 'status-indicator error';
+            }
+        } catch (e) {
+            statusEl.textContent = '✗ 无法连接';
+            statusEl.className = 'status-indicator error';
+        }
+    }
+
+    // 测试工具
+    async testTools() {
+        const backendUrl = document.getElementById('backendUrl').value;
+        const ffmpegPath = document.getElementById('ffmpegPath').value;
+        const whisperPath = document.getElementById('whisperPath').value;
+        const modelPath = document.getElementById('modelPath').value;
+        const statusEl = document.getElementById('toolsStatus');
+
+        if (!backendUrl) {
+            statusEl.innerHTML = '<div class="tool-error">请先配置后端地址</div>';
+            return;
+        }
+
+        statusEl.innerHTML = '<div>测试中...</div>';
+
+        try {
+            const response = await fetch(`${backendUrl}/api/test-tools`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ffmpeg_path: ffmpegPath,
+                    whisper_path: whisperPath,
+                    model_path: modelPath
+                })
+            });
+
+            if (response.ok) {
+                const results = await response.json();
+                let html = '';
+                html += `<div class="${results.ffmpeg ? 'tool-ok' : 'tool-error'}">FFmpeg: ${results.ffmpeg ? '✓ 可用' : '✗ 不可用'}</div>`;
+                html += `<div class="${results.whisper ? 'tool-ok' : 'tool-error'}">Whisper: ${results.whisper ? '✓ 可用' : '✗ 不可用'}</div>`;
+                html += `<div class="${results.model ? 'tool-ok' : 'tool-error'}">模型文件: ${results.model ? '✓ 找到' : '✗ 未找到'}</div>`;
+                statusEl.innerHTML = html;
+            } else {
+                statusEl.innerHTML = '<div class="tool-error">测试失败</div>';
+            }
+        } catch (e) {
+            statusEl.innerHTML = '<div class="tool-error">无法连接到后端服务</div>';
+        }
+    }
+
+    // ========== 自动生成字幕 ==========
+
+    // 生成字幕
+    async generateSubtitle() {
+        if (!this.currentVideoFile) {
+            this.showStatus('请先上传视频文件', 'error');
+            return;
+        }
+
+        if (!this.config.backendUrl) {
+            this.showStatus('请先配置后端服务地址', 'error');
+            this.openSettings();
+            return;
+        }
+
+        if (!this.config.modelPath) {
+            this.showStatus('请先配置Whisper模型路径', 'error');
+            this.openSettings();
+            return;
+        }
+
+        // 禁用按钮
+        this.generateSubtitleBtn.disabled = true;
+        this.generateSubtitleBtn.textContent = '⏳ 生成中...';
+        this.showStatus('正在生成字幕，请稍候...');
+
+        try {
+            const formData = new FormData();
+            formData.append('video', this.currentVideoFile);
+            formData.append('ffmpeg_path', this.config.ffmpegPath);
+            formData.append('whisper_path', this.config.whisperPath);
+            formData.append('model_path', this.config.modelPath);
+            formData.append('language', this.config.language);
+
+            const response = await fetch(`${this.config.backendUrl}/api/generate-subtitle`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+
+                if (result.success) {
+                    // 解析生成的字幕
+                    const subtitles = this.parseVTT(result.subtitle);
+                    this.subtitles = subtitles;
+                    this.showStatus(`✓ 字幕生成成功！共 ${subtitles.length} 条字幕`);
+                } else {
+                    this.showStatus('字幕生成失败: ' + result.error, 'error');
+                }
+            } else {
+                const error = await response.json();
+                this.showStatus('生成失败: ' + (error.error || '未知错误'), 'error');
+            }
+        } catch (e) {
+            console.error('生成字幕出错:', e);
+            this.showStatus('生成失败: ' + e.message, 'error');
+        } finally {
+            // 恢复按钮
+            this.generateSubtitleBtn.disabled = false;
+            this.generateSubtitleBtn.textContent = '🤖 自动生成字幕';
+        }
     }
 }
 
