@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTS字幕视频播放器</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>TTS字幕视频播放器</h1>
+
+        <div class="upload-section">
+            <div class="upload-group">
+                <label for="videoFile">选择视频文件:</label>
+                <input type="file" id="videoFile" accept="video/*">
+            </div>
+            <div class="upload-group">
+                <label for="subtitleFile">选择字幕文件 (SRT):</label>
+                <input type="file" id="subtitleFile" accept=".srt">
+            </div>
+        </div>
+
+        <div class="player-container">
+            <video id="videoPlayer" controls>
+                <source src="" type="video/mp4">
+                您的浏览器不支持视频播放。
+            </video>
+
+            <div class="subtitle-display" id="subtitleDisplay"></div>
+        </div>
+
+        <div class="controls">
+            <button id="toggleAudioBtn" class="toggle-btn">
+                <span id="modeText">当前: 原声</span>
+            </button>
+            <div class="tts-controls">
+                <label for="voiceSelect">TTS语音:</label>
+                <select id="voiceSelect"></select>
+                <label for="rateControl">语速:</label>
+                <input type="range" id="rateControl" min="0.5" max="2" step="0.1" value="1">
+                <span id="rateValue">1.0</span>
+            </div>
+        </div>
+
+        <div class="status" id="status"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
