@@ -6,6 +6,7 @@ class TTSVideoPlayer {
         this.subtitleDisplay = document.getElementById('subtitleDisplay');
         this.videoFileInput = document.getElementById('videoFile');
         this.subtitleFileInput = document.getElementById('subtitleFile');
+        this.subtitleFileName = document.getElementById('subtitleFileName');
         this.toggleBtn = document.getElementById('toggleAudioBtn');
         this.modeText = document.getElementById('modeText');
         this.voiceSelect = document.getElementById('voiceSelect');
@@ -159,6 +160,10 @@ class TTSVideoPlayer {
 
                 if (subtitles.length === 0) {
                     this.showStatus(`字幕解析失败，请检查文件格式`, 'error');
+                    this.subtitleFileName.textContent = '';
+                } else {
+                    // 更新UI显示字幕文件名
+                    this.subtitleFileName.textContent = `✓ ${file.name}`;
                 }
             };
             reader.readAsText(file);
@@ -701,6 +706,9 @@ class TTSVideoPlayer {
                     const subtitles = this.parseVTT(result.subtitle);
                     this.subtitles = subtitles;
                     this.showStatus(`✓ 字幕生成成功！共 ${subtitles.length} 条字幕`);
+
+                    // 更新UI显示已生成字幕
+                    this.subtitleFileName.textContent = `✓ 已自动生成字幕 (${subtitles.length} 条)`;
                 } else {
                     this.showStatus('字幕生成失败: ' + result.error, 'error');
                 }
