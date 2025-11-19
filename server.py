@@ -13,6 +13,11 @@ import shutil
 from pathlib import Path
 import json
 import logging
+import asyncio
+import edge_tts
+from deep_translator import GoogleTranslator
+
+
 
 app = Flask(__name__)
 # 允许跨域请求 - 支持所有来源（包括file://协议）
@@ -227,6 +232,126 @@ def generate_subtitle():
     except Exception as e:
         logger.error(f"生成字幕时出错: {str(e)}", exc_info=True)
         return jsonify({'error': f'服务器错误: {str(e)}'}), 500
+
+
+@app.route('/api/voices', methods=['GET'])
+def get_voices():
+    """获取Edge TTS可用语音列表"""
+    try:
+        # 使用asyncio运行异步函数
+        voices = asyncio.run(edge_tts.list_voices())
+        # 过滤出中文语音
+        chinese_voices = [v for v in voices if "zh" in v['Locale']]
+        return jsonify(chinese_voices)
+    except Exception as e:
+        logger.error(f"获取语音列表失败: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/tts', methods=['POST'])
+def tts():
+    """生成TTS音频"""
+    try:
+        data = request.json
+        text = data.get('text')
+        voice = data.get('voice', 'zh-CN-XiaoxiaoNeural')
+        rate = data.get('rate', '+0%')  # 格式: +0% or -10%
+        
+        if not text:
+            return jsonify({'error': '缺少文本参数'}), 400
+
+        # 创建临时文件
+        output_file = TEMP_DIR / f"tts_{os.urandom(8).hex()}.mp3"
+        
+        # 调整语速格式
+        # edge-tts接受 "+50%", "-20%" 这样的格式
+        # 如果传入的是数字 (e.g. 1.2, 0.8), 需要转换
+        if isinstance(rate, (int, float)):
+            rate_percent = int((rate - 1.0) * 100)
+            rate_str = f"{'+' if rate_percent >= 0 else ''}{rate_percent}%"
+        else:
+            rate_str = rate
+
+        async def _generate():
+            communicate = edge_tts.Communicate(text, voice, rate=rate_str)
+            await communicate.save(str(output_file))
+
+        asyncio.run(_generate())
+        
+        # 获取音频时长 (简单估算或使用ffmpeg获取准确时长)
+        # 这里为了准确性，我们使用ffmpeg获取时长
+        duration = 0
+        try:
+            result = subprocess.run(
+                ['ffmpeg', '-i', str(output_file)],
+                capture_output=True,
+                text=True
+            )
+            # ffmpeg输出在stderr中: Duration: 00:00:05.12
+            import re
+            match = re.search(r"Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})", result.stderr)
+            if match:
+                h, m, s = map(float, match.groups())
+                duration = h * 3600 + m * 60 + s
+        except Exception as e:
+            logger.warning(f"获取时长失败: {e}")
+
+        return jsonify({
+            'url': f"/api/static/{output_file.name}",
+            'duration': duration
+        })
+
+    except Exception as e:
+        logger.error(f"TTS生成失败: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/translate', methods=['POST'])
+def translate():
+    """翻译文本 (使用Google Translate)"""
+    try:
+        data = request.json
+        text = data.get('text')
+        target_lang = data.get('target_lang', 'zh-CN')
+        
+        if not text:
+            return jsonify({'error': '缺少文本参数'}), 400
+
+        # 映射语言代码
+        # deep-translator使用 'zh-CN', 'en', 等标准代码
+        # 但为了保险，做一些简单的映射
+        lang_map = {
+            'zh': 'zh-CN',
+            'zh-CN': 'zh-CN',
+            'zh-TW': 'zh-TW',
+            'en': 'en',
+            'ja': 'ja',
+            'ko': 'ko',
+            'es': 'es',
+            'fr': 'fr',
+            'de': 'de',
+            'ru': 'ru',
+            'ar': 'ar'
+        }
+        
+        target = lang_map.get(target_lang, target_lang)
+        
+        # 使用deep-translator调用Google翻译
+        translator = GoogleTranslator(source='auto', target=target)
+        translated = translator.translate(text)
+        
+        return jsonify({'translatedText': translated})
+
+    except Exception as e:
+        logger.error(f"翻译失败: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/static/<path:filename>')
+
+def serve_temp_file(filename):
+    """提供临时生成的文件"""
+    return send_from_directory(TEMP_DIR, filename)
 
 
 @app.route('/api/test-tools', methods=['POST'])

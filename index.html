@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TTS字幕视频播放器</title>
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -23,6 +25,7 @@
                 <label for="subtitleFile">选择字幕文件 (SRT/VTT):</label>
                 <input type="file" id="subtitleFile" accept=".srt,.vtt">
                 <span id="subtitleFileName" class="file-name-display"></span>
+                <button id="saveSubtitleBtn" class="save-sub-btn" style="display: none;" title="保存字幕">💾</button>
                 <div class="translate-controls" id="translateControls" style="display: none;">
                     <select id="targetLanguage" class="language-select">
                         <option value="">选择目标语言</option>
@@ -56,15 +59,33 @@
                 <span id="modeText">当前: 原声</span>
             </button>
             <div class="tts-controls">
-                <label for="voiceSelect">TTS语音:</label>
-                <select id="voiceSelect"></select>
+                <div class="control-group">
+                    <label for="ttsEngine">TTS引擎:</label>
+                    <select id="ttsEngine">
+                        <option value="browser">浏览器内置 (离线)</option>
+                        <option value="edge">Edge TTS (在线/高质量)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="voiceSelect">TTS语音:</label>
+                    <select id="voiceSelect"></select>
+                </div>
 
                 <div class="rate-mode-toggle">
                     <label class="switch">
                         <input type="checkbox" id="autoRateToggle">
                         <span class="slider"></span>
                     </label>
-                    <label for="autoRateToggle">自动调整语速</label>
+                    <label for="autoRateToggle">智能语速控制</label>
+                </div>
+
+                <div class="control-group" id="speedStrategyGroup" style="display: none;">
+                    <label for="speedStrategy">控制策略:</label>
+                    <select id="speedStrategy">
+                        <option value="speed_up">加速语音 (推荐)</option>
+                        <option value="pause_video">暂停视频 (适合长句)</option>
+                    </select>
                 </div>
 
                 <div class="rate-control-group">
@@ -90,7 +111,8 @@
                     <h3>后端服务</h3>
                     <div class="form-group">
                         <label for="backendUrl">后端服务地址:</label>
-                        <input type="text" id="backendUrl" value="http://localhost:5000" placeholder="http://localhost:5000">
+                        <input type="text" id="backendUrl" value="http://localhost:5000"
+                            placeholder="http://localhost:5000">
                         <small>可选功能，用于自动生成字幕</small>
                     </div>
                     <button id="testBackendBtn" class="test-btn">测试连接</button>
@@ -136,4 +158,5 @@
 
     <script src="app.js"></script>
 </body>
+
 </html>

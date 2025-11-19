@@ -16,10 +16,18 @@ class TTSVideoPlayer {
         this.rateControlGroup = document.querySelector('.rate-control-group');
         this.statusDiv = document.getElementById('status');
 
+        // 新增控件
+        this.ttsEngine = document.getElementById('ttsEngine');
+        this.speedStrategy = document.getElementById('speedStrategy');
+        this.speedStrategyGroup = document.getElementById('speedStrategyGroup');
+
+
         // 设置相关元素
         this.settingsBtn = document.getElementById('settingsBtn');
         this.settingsModal = document.getElementById('settingsModal');
         this.generateSubtitleBtn = document.getElementById('generateSubtitleBtn');
+        this.saveSubtitleBtn = document.getElementById('saveSubtitleBtn');
+
 
         // 翻译相关元素
         this.translateControls = document.getElementById('translateControls');
@@ -30,12 +38,23 @@ class TTSVideoPlayer {
         this.subtitles = [];
         this.originalSubtitles = []; // 保存原始字幕
         this.currentSubtitleIndex = -1;
+        this.lastSpokenIndex = -1; // 记录上一条朗读的字幕索引，防止重复朗读
         this.isTTSMode = false;
+
         this.synth = window.speechSynthesis;
         this.currentUtterance = null;
         this.voices = [];
+        this.edgeVoices = []; // Edge TTS语音列表
         this.ttsRate = 1.0;
         this.isAutoRate = false;
+        this.ttsRate = 1.0;
+        this.isAutoRate = false;
+        this.currentAudio = null; // Edge TTS音频对象
+        this.speakingSubtitleEnd = 0; // 当前正在朗读的字幕结束时间
+        this.videoPausedByTTS = false; // 标记视频是否被TTS暂停（防止重复日志）
+
+
+
 
         // 上传的视频文件(用于自动生成字幕)
         this.currentVideoFile = null;
@@ -56,6 +75,10 @@ class TTSVideoPlayer {
         this.videoPlayer.addEventListener('play', () => this.onPlay());
         this.rateControl.addEventListener('input', (e) => this.updateRate(e));
         this.autoRateToggle.addEventListener('change', (e) => this.toggleAutoRate(e));
+        this.speedStrategy.addEventListener('change', () => this.updateRateControlState());
+        this.ttsEngine.addEventListener('change', () => this.onEngineChange());
+
+
 
         // 设置相关事件
         this.settingsBtn.addEventListener('click', () => this.openSettings());
@@ -66,7 +89,10 @@ class TTSVideoPlayer {
         document.getElementById('saveSettingsBtn').addEventListener('click', () => this.saveSettings());
         document.getElementById('testBackendBtn').addEventListener('click', () => this.testBackend());
         document.getElementById('testToolsBtn').addEventListener('click', () => this.testTools());
+        document.getElementById('testToolsBtn').addEventListener('click', () => this.testTools());
         this.generateSubtitleBtn.addEventListener('click', () => this.generateSubtitle());
+        this.saveSubtitleBtn.addEventListener('click', () => this.saveSubtitle());
+
 
         // 翻译相关事件
         this.targetLanguage.addEventListener('change', () => this.onLanguageSelect());
@@ -83,45 +109,93 @@ class TTSVideoPlayer {
 
     // 初始化TTS语音列表
     initTTS() {
+        this.onEngineChange();
+    }
+
+    // 引擎切换事件
+    async onEngineChange() {
+        const engine = this.ttsEngine.value;
+        this.voiceSelect.innerHTML = '<option>加载中...</option>';
+
+        if (engine === 'browser') {
+            this.loadBrowserVoices();
+        } else {
+            await this.loadEdgeVoices();
+        }
+    }
+
+    // 加载浏览器语音
+    loadBrowserVoices() {
         if (!this.synth) {
-            this.showStatus('您的浏览器不支持TTS功能，请使用Safari或Chrome浏览器。', 'error');
+            this.showStatus('您的浏览器不支持TTS功能', 'error');
             return;
         }
 
         const loadVoices = () => {
             this.voices = this.synth.getVoices();
-
-            // 优先选择中文语音
             const chineseVoices = this.voices.filter(voice =>
                 voice.lang.startsWith('zh') || voice.lang.startsWith('cmn')
             );
 
-            // 清空并填充语音选择器
             this.voiceSelect.innerHTML = '';
             const voicesToShow = chineseVoices.length > 0 ? chineseVoices : this.voices;
 
             voicesToShow.forEach((voice, index) => {
                 const option = document.createElement('option');
-                option.value = index;
+                option.value = index; // 浏览器语音使用索引作为value
                 option.textContent = `${voice.name} (${voice.lang})`;
-                if (voice.default) {
-                    option.textContent += ' - 默认';
-                }
+                if (voice.default) option.textContent += ' - 默认';
                 this.voiceSelect.appendChild(option);
             });
 
-            // 选择第一个中文语音
-            if (chineseVoices.length > 0) {
-                this.voiceSelect.value = 0;
-            }
+            if (chineseVoices.length > 0) this.voiceSelect.value = 0;
         };
 
-        // 语音列表加载（某些浏览器需要异步加载）
         loadVoices();
         if (this.synth.onvoiceschanged !== undefined) {
             this.synth.onvoiceschanged = loadVoices;
         }
     }
+
+    // 加载Edge TTS语音
+    async loadEdgeVoices() {
+        if (!this.config.backendUrl) {
+            this.showStatus('请先配置后端服务地址', 'error');
+            this.voiceSelect.innerHTML = '<option>请配置后端</option>';
+            return;
+        }
+
+        try {
+            const response = await fetch(`${this.config.backendUrl}/api/voices`);
+            if (response.ok) {
+                this.edgeVoices = await response.json();
+                this.voiceSelect.innerHTML = '';
+
+                this.edgeVoices.forEach(voice => {
+                    const option = document.createElement('option');
+                    option.value = voice.ShortName; // Edge语音使用ShortName作为value
+                    // 兼容新版edge-tts字段 (v7.x)
+                    const name = voice.LocalName || voice.DisplayName || voice.FriendlyName || voice.Name;
+                    option.textContent = `${name} (${voice.Locale || voice.Gender})`;
+                    this.voiceSelect.appendChild(option);
+                });
+
+
+                // 默认选中晓晓
+                const xiaoxiao = this.edgeVoices.find(v => v.ShortName === 'zh-CN-XiaoxiaoNeural');
+                if (xiaoxiao) {
+                    this.voiceSelect.value = xiaoxiao.ShortName;
+                }
+            } else {
+                throw new Error('获取语音列表失败');
+            }
+        } catch (e) {
+            console.error(e);
+            this.showStatus('无法连接到后端服务', 'error');
+            this.voiceSelect.innerHTML = '<option>连接失败</option>';
+        }
+    }
+
 
     // 加载视频
     loadVideo(event) {
@@ -176,10 +250,12 @@ class TTSVideoPlayer {
                 } else {
                     // 更新UI显示字幕文件名
                     this.subtitleFileName.textContent = `✓ ${file.name}`;
-                    // 显示翻译控件
+                    // 显示翻译控件和保存按钮
                     this.translateControls.style.display = 'flex';
+                    this.saveSubtitleBtn.style.display = 'inline-block';
                 }
             };
+
             reader.readAsText(file);
         }
     }
@@ -309,9 +385,40 @@ class TTSVideoPlayer {
 
     // 视频时间更新事件
     onTimeUpdate() {
+        const currentTime = this.videoPlayer.currentTime;
+
+        // 策略检查：如果当前正在朗读且策略是"暂停视频"
+        // 检查是否到达了当前字幕的结束时间，如果是，暂停视频等待朗读结束
+        if (this.isTTSMode &&
+            this.currentAudio && !this.currentAudio.paused &&
+            this.speedStrategy.value === 'pause_video' &&
+            this.speakingSubtitleEnd > 0) {
+
+            // 如果超过了字幕结束时间 (给予0.1秒的宽容度)
+            if (currentTime >= this.speakingSubtitleEnd - 0.1) {
+                if (!this.videoPausedByTTS) {
+                    console.log(`到达字幕结束点(${this.speakingSubtitleEnd})，暂停视频等待TTS完成。音频状态: paused=${this.currentAudio.paused}, ended=${this.currentAudio.ended}, time=${this.currentAudio.currentTime}/${this.currentAudio.duration}`);
+                    this.videoPausedByTTS = true;
+                }
+
+                // 安全检查：如果音频已经结束但onended没触发（极罕见），强制恢复
+                if (this.currentAudio.ended) {
+                    console.warn('检测到音频已结束但视频仍暂停，强制恢复');
+                    this.speakingSubtitleEnd = 0;
+                    this.videoPausedByTTS = false;
+                    this.videoPlayer.play();
+                    return;
+                }
+
+                this.videoPlayer.pause();
+                return; // 暂停处理后续逻辑，防止触发下一条字幕
+            }
+
+
+        }
+
         if (this.subtitles.length === 0) return;
 
-        const currentTime = this.videoPlayer.currentTime;
 
         // 查找当前应该显示的字幕
         let foundSubtitle = null;
@@ -334,9 +441,12 @@ class TTSVideoPlayer {
                 this.subtitleDisplay.textContent = foundSubtitle.text;
 
                 // 如果是TTS模式，朗读字幕
-                if (this.isTTSMode && !this.videoPlayer.paused) {
+                if (this.isTTSMode) {
+                    console.log(`[字幕切换] 从索引 ${this.currentSubtitleIndex} 切换到 ${foundIndex}`);
                     this.speakText(foundSubtitle.text, foundSubtitle);
+                    this.lastSpokenIndex = foundIndex;
                 }
+
             } else {
                 this.subtitleDisplay.textContent = '';
                 this.stopSpeaking();
@@ -349,7 +459,20 @@ class TTSVideoPlayer {
         // 停止当前朗读
         this.stopSpeaking();
 
-        if (!text || !this.synth) return;
+        if (!text) return;
+
+        const engine = this.ttsEngine.value;
+
+        if (engine === 'browser') {
+            this.speakBrowserTTS(text, subtitle);
+        } else {
+            this.speakEdgeTTS(text, subtitle);
+        }
+    }
+
+    // 浏览器内置TTS
+    speakBrowserTTS(text, subtitle) {
+        if (!this.synth) return;
 
         this.currentUtterance = new SpeechSynthesisUtterance(text);
 
@@ -370,12 +493,193 @@ class TTSVideoPlayer {
             rate = this.ttsRate;
         }
         this.currentUtterance.rate = rate;
-
-        // 设置音量（TTS模式下）
         this.currentUtterance.volume = 1.0;
 
         this.synth.speak(this.currentUtterance);
     }
+
+    // Edge TTS (后端)
+    async speakEdgeTTS(text, subtitle) {
+        if (!this.config.backendUrl) return;
+
+        const voice = this.voiceSelect.value;
+        let rateParam = '+0%';
+
+        if (!this.isAutoRate) {
+            rateParam = this.ttsRate;
+        }
+
+        // 策略：如果是"暂停视频"模式，立即暂停视频以防止播放过头
+        const strategy = this.speedStrategy.value;
+        const wasPlaying = !this.videoPlayer.paused;
+
+        console.log(`[speakEdgeTTS] 开始, wasPlaying=${wasPlaying}, strategy=${strategy}, isAutoRate=${this.isAutoRate}`);
+
+
+        // 如果是"暂停视频"模式，允许手动调整语速
+        // 这种情况下，我们不让后端调整语速，而是前端控制播放速度
+        // 或者后端生成时就用手动语速？
+        // 为了统一，如果开启了智能控制且是暂停模式，我们使用手动语速参数
+        if (this.isAutoRate && strategy === 'pause_video') {
+            rateParam = this.ttsRate;
+        }
+
+
+        if (this.isAutoRate && strategy === 'pause_video' && wasPlaying) {
+            console.log('暂停视频模式：开始获取音频，暂停视频');
+            this.videoPlayer.pause();
+        }
+
+        try {
+            const response = await fetch(`${this.config.backendUrl}/api/tts`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: text,
+                    voice: voice,
+                    rate: rateParam
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                const audioUrl = `${this.config.backendUrl}${result.url}`;
+                const audioDuration = result.duration;
+
+                this.currentAudio = new Audio(audioUrl);
+                this.currentAudio.preload = 'auto';
+
+                // 添加错误监听
+                this.currentAudio.onerror = (e) => {
+                    console.error('TTS音频播放出错:', e);
+                    // 出错时确保视频恢复
+                    this.speakingSubtitleEnd = 0;
+                    this.videoPausedByTTS = false;
+                    if (this.videoPlayer.paused) this.videoPlayer.play();
+                };
+
+
+                // 智能语速控制
+                if (this.isAutoRate && subtitle && audioDuration > 0) {
+                    const subtitleDuration = subtitle.end - subtitle.start;
+
+                    // 默认使用手动语速
+                    let playbackRate = this.ttsRate;
+
+                    // 只有在"加速音频"模式下，才自动计算语速
+                    if (strategy === 'speed_up') {
+                        playbackRate = this.calculateDurationRate(audioDuration, subtitleDuration);
+                    }
+
+                    this.currentAudio.playbackRate = playbackRate;
+
+                    // 更新UI显示
+                    if (strategy === 'speed_up') {
+                        this.rateValue.textContent = playbackRate.toFixed(1);
+                        this.rateValue.classList.add('auto');
+                    } else {
+                        // 暂停模式下显示手动语速
+                        this.rateValue.textContent = this.ttsRate;
+                        this.rateValue.classList.remove('auto');
+                    }
+
+
+                    // 记录当前字幕结束时间，用于onTimeUpdate中判断是否需要暂停
+                    this.speakingSubtitleEnd = subtitle.end;
+
+                    // 决定何时恢复视频
+                    if (strategy === 'pause_video' && wasPlaying) {
+                        // 新逻辑：视频和音频同时播放
+                        // 只有当视频播放到字幕结束时，如果音频还没播完，才在 onTimeUpdate 中暂停视频
+
+                        console.log('暂停视频模式：音频就绪，同时恢复视频播放');
+                        this.videoPlayer.play().catch(e => console.error('视频播放失败:', e));
+
+
+                        // 注册音频结束回调，确保视频继续播放
+                        this.currentAudio.onended = () => {
+                            console.log('[onended] TTS播放结束，恢复/保持视频播放');
+                            this.speakingSubtitleEnd = 0;
+                            this.videoPausedByTTS = false;
+                            // 不管当前状态如何，都尝试播放（解决状态检查的时序问题）
+                            console.log('[onended] 尝试恢复视频播放');
+                            this.videoPlayer.play().catch(e => console.error('[onended] 视频播放失败:', e));
+                        };
+
+
+
+                    } else {
+                        // 加速模式 (Speed Up) - 已经在上面设置了playbackRate
+                    }
+
+
+                } else if (!this.isAutoRate) {
+                    this.currentAudio.playbackRate = 1.0;
+
+                    // 即使不是自动速度，在暂停视频模式下也需要注册onended回调
+                    if (strategy === 'pause_video' && wasPlaying && subtitle) {
+                        this.speakingSubtitleEnd = subtitle.end;
+                        this.currentAudio.onended = () => {
+                            console.log('[onended] TTS播放结束（手动速度模式），恢复视频');
+                            this.speakingSubtitleEnd = 0;
+                            this.videoPausedByTTS = false;
+                            // 不管当前状态如何，都尝试播放
+                            console.log('[onended] 尝试恢复视频播放');
+                            this.videoPlayer.play().catch(e => console.error('[onended] 视频播放失败:', e));
+                        };
+
+
+
+                    }
+                }
+
+                this.currentAudio.play().catch(e => {
+                    console.error('TTS音频play()失败:', e);
+                    // 播放失败，确保视频恢复
+                    this.speakingSubtitleEnd = 0;
+                    this.videoPausedByTTS = false;
+                    if (this.videoPlayer.paused) this.videoPlayer.play();
+                });
+
+                console.log('开始播放TTS音频');
+
+            } else {
+                // 如果请求失败，且我们暂停了视频，需要恢复
+                if (this.isAutoRate && strategy === 'pause_video' && wasPlaying) {
+                    this.videoPlayer.play();
+                }
+            }
+        } catch (e) {
+            console.error('Edge TTS播放失败:', e);
+            this.showStatus('TTS播放失败', 'error');
+            // 发生错误，恢复视频
+            if (this.isAutoRate && strategy === 'pause_video' && wasPlaying) {
+                this.videoPlayer.play();
+            }
+        }
+    }
+
+    // 基于时长的智能语速计算 (纯计算，无副作用)
+    calculateDurationRate(audioDuration, subtitleDuration) {
+        // 目标：在字幕结束前读完
+        // 留出一点缓冲时间 (0.2秒)
+        const targetDuration = Math.max(0.5, subtitleDuration - 0.2);
+
+        let rate = audioDuration / targetDuration;
+
+        // 限制最大语速
+        const MAX_RATE = 2.5;
+        const MIN_RATE = 0.8;
+
+        if (rate > MAX_RATE) {
+            rate = MAX_RATE;
+        } else if (rate < MIN_RATE) {
+            rate = 1.0;
+        }
+
+        return rate;
+    }
+
 
     // 计算最佳语速
     calculateOptimalRate(subtitle) {
@@ -447,7 +751,15 @@ class TTSVideoPlayer {
         if (this.synth && this.synth.speaking) {
             this.synth.cancel();
         }
+        if (this.currentAudio) {
+            this.currentAudio.pause();
+            this.currentAudio = null;
+        }
+        this.speakingSubtitleEnd = 0; // 重置标记
+        this.videoPausedByTTS = false; // 重置暂停标记
     }
+
+
 
     // 切换原声/TTS模式
     toggleMode() {
@@ -471,37 +783,66 @@ class TTSVideoPlayer {
 
     // 视频暂停事件
     onPause() {
+        // 如果是因为TTS需要赶进度而暂停视频，不要停止TTS
+        if (this.videoPausedByTTS) {
+            console.log('视频被TTS逻辑暂停，保持TTS播放');
+            return;
+        }
         this.stopSpeaking();
     }
+
 
     // 视频播放事件
     onPlay() {
         // 如果在TTS模式且有当前字幕，继续朗读
         if (this.isTTSMode && this.currentSubtitleIndex >= 0) {
-            const currentSubtitle = this.subtitles[this.currentSubtitleIndex];
-            if (currentSubtitle) {
-                this.speakText(currentSubtitle.text, currentSubtitle);
+            // 只有当当前字幕没有被朗读过时才朗读 (防止暂停/恢复时的重复朗读循环)
+            if (this.currentSubtitleIndex !== this.lastSpokenIndex) {
+                const currentSubtitle = this.subtitles[this.currentSubtitleIndex];
+                if (currentSubtitle) {
+                    this.speakText(currentSubtitle.text, currentSubtitle);
+                    this.lastSpokenIndex = this.currentSubtitleIndex;
+                }
             }
         }
     }
 
+
     // 切换自动语速
     toggleAutoRate(event) {
         this.isAutoRate = event.target.checked;
+        this.updateRateControlState();
 
         if (this.isAutoRate) {
-            // 启用自动语速，禁用手动控制
+            this.showStatus('已启用智能语速控制');
+            this.speedStrategyGroup.style.display = 'flex';
+            // 如果当前策略是暂停视频，保持手动控制显示
+            this.updateRateControlState();
+        } else {
+
+            this.showStatus('已切换为手动语速控制');
+            this.speedStrategyGroup.style.display = 'none';
+        }
+
+    }
+
+    // 更新语速控件状态
+    updateRateControlState() {
+        const strategy = this.speedStrategy.value;
+
+        // 如果是自动模式 且 策略是"加速音频"，则禁用手动控制
+        // 如果是自动模式 且 策略是"暂停视频"，则启用手动控制 (用户决定语速，系统决定暂停)
+        // 如果是手动模式，则启用手动控制
+
+        if (this.isAutoRate && strategy === 'speed_up') {
             this.rateControlGroup.classList.add('disabled');
             this.rateValue.classList.add('auto');
-            this.showStatus('已启用自动语速调整，将根据字幕长度和时间动态调整');
         } else {
-            // 禁用自动语速，启用手动控制
             this.rateControlGroup.classList.remove('disabled');
             this.rateValue.classList.remove('auto');
-            this.rateValue.textContent = this.ttsRate.toFixed(1);
-            this.showStatus('已切换到手动语速模式');
         }
     }
+
 
     // 更新语速
     updateRate(event) {
@@ -724,9 +1065,11 @@ class TTSVideoPlayer {
 
                     // 更新UI显示已生成字幕
                     this.subtitleFileName.textContent = `✓ 已自动生成字幕 (${subtitles.length} 条)`;
-                    // 显示翻译控件
+                    // 显示翻译控件和保存按钮
                     this.translateControls.style.display = 'flex';
+                    this.saveSubtitleBtn.style.display = 'inline-block';
                 } else {
+
                     this.showStatus('字幕生成失败: ' + result.error, 'error');
                 }
             } else {
@@ -815,88 +1158,87 @@ class TTSVideoPlayer {
         }
     }
 
-    // 翻译单条文本（使用多个翻译服务，自动降级）
+    // 翻译单条文本
     async translateText(text, targetLang) {
-        // 方案1: 使用LibreTranslate（开源免费）
-        try {
-            return await this.translateWithLibre(text, targetLang);
-        } catch (e) {
-            console.warn('LibreTranslate翻译失败，尝试MyMemory:', e);
+        // 使用后端Google翻译代理 (deep-translator)
+        if (!this.config.backendUrl) {
+            throw new Error('请先配置后端服务地址');
         }
 
-        // 方案2: 使用MyMemory（备选）
         try {
-            return await this.translateWithMyMemory(text, targetLang);
-        } catch (e) {
-            console.warn('MyMemory翻译失败:', e);
-        }
+            const response = await fetch(`${this.config.backendUrl}/api/translate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: text,
+                    target_lang: targetLang
+                })
+            });
 
-        // 所有方案都失败，返回原文
-        console.error('所有翻译服务都失败，使用原文');
-        return text;
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            return data.translatedText;
+        } catch (e) {
+            console.error('Google翻译失败:', e);
+            throw e;
+        }
     }
 
-    // LibreTranslate API（开源免费，更稳定）
-    async translateWithLibre(text, targetLang) {
-        // 使用公共LibreTranslate实例
-        const url = 'https://libretranslate.de/translate';
 
-        // 语言代码转换（LibreTranslate使用ISO 639-1标准）
-        const langMap = {
-            'zh-CN': 'zh',
-            'zh-TW': 'zh',
-            'en': 'en',
-            'ja': 'ja',
-            'ko': 'ko',
-            'es': 'es',
-            'fr': 'fr',
-            'de': 'de',
-            'ru': 'ru',
-            'ar': 'ar'
-        };
 
-        const target = langMap[targetLang] || targetLang.split('-')[0];
 
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                q: text,
-                source: 'auto',
-                target: target,
-                format: 'text'
-            })
+    // 保存字幕
+    saveSubtitle() {
+        if (this.subtitles.length === 0) {
+            this.showStatus('没有可保存的字幕', 'error');
+            return;
+        }
+
+        // 构建VTT内容
+        let vttContent = "WEBVTT\n\n";
+        this.subtitles.forEach((sub, index) => {
+            const startTime = this.formatTime(sub.start);
+            const endTime = this.formatTime(sub.end);
+            vttContent += `${index + 1}\n${startTime} --> ${endTime}\n${sub.text}\n\n`;
         });
 
-        if (!response.ok) {
-            throw new Error(`LibreTranslate HTTP ${response.status}`);
+        // 创建Blob并下载
+        const blob = new Blob([vttContent], { type: 'text/vtt' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+
+        // 文件名
+        let fileName = 'subtitle.vtt';
+        if (this.currentVideoFile) {
+            fileName = this.currentVideoFile.name.replace(/\.[^/.]+$/, "") + '.vtt';
         }
 
-        const data = await response.json();
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
 
-        if (data.translatedText) {
-            return data.translatedText;
-        } else {
-            throw new Error('LibreTranslate响应无效');
-        }
+        this.showStatus(`字幕已保存为 ${fileName}`);
     }
 
-    // MyMemory API（备选方案）
-    async translateWithMyMemory(text, targetLang) {
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=auto|${targetLang}`;
-
-        const response = await fetch(url);
-        const data = await response.json();
-
-        // MyMemory API响应格式检查
-        if (data.responseData && data.responseData.translatedText) {
-            return data.responseData.translatedText;
-        } else {
-            console.warn('MyMemory API响应格式异常:', data);
-            throw new Error('MyMemory翻译失败');
-        }
+    // 格式化时间 (秒 -> HH:MM:SS.mmm)
+    formatTime(seconds) {
+        const date = new Date(0);
+        date.setMilliseconds(seconds * 1000);
+        const hh = date.getUTCHours().toString().padStart(2, '0');
+        const mm = date.getUTCMinutes().toString().padStart(2, '0');
+        const ss = date.getUTCSeconds().toString().padStart(2, '0');
+        const mmm = date.getUTCMilliseconds().toString().padStart(3, '0');
+        return `${hh}:${mm}:${ss}.${mmm}`;
     }
 
     // 获取语言名称
