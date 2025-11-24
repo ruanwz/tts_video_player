@@ -871,7 +871,7 @@ class TTSVideoPlayer {
     // 加载配置
     loadConfig() {
         const defaultConfig = {
-            backendUrl: 'http://localhost:5000',
+            backendUrl: 'http://localhost:5001',
             ffmpegPath: 'ffmpeg',
             whisperPath: 'whisper',
             modelPath: '',
@@ -957,7 +957,7 @@ class TTSVideoPlayer {
         try {
             const response = await fetch(`${backendUrl}/api/health`, {
                 method: 'GET',
-                timeout: 5000
+                timeout: 5001
             });
 
             if (response.ok) {
