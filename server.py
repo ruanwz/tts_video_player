@@ -15,14 +15,18 @@ import json
 import logging
 import asyncio
 import edge_tts
+import edge_tts
 from deep_translator import GoogleTranslator
+import yt_dlp
+import re
 
 
 
 app = Flask(__name__)
 # 允许跨域请求 - 支持所有来源（包括file://协议）
+# 允许跨域请求 - 支持所有来源（包括file://协议）
 CORS(app, resources={
-    r"/api/*": {
+    r"/*": {
         "origins": "*",
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type"],
@@ -395,6 +399,190 @@ def test_tools():
         results['model'] = True
 
     return jsonify(results)
+
+
+import yt_dlp
+
+
+def parse_vtt_time(time_str):
+    # Format: HH:MM:SS.mmm
+    parts = time_str.split(':')
+    hours = int(parts[0])
+    minutes = int(parts[1])
+    seconds = float(parts[2])
+    return hours * 3600 + minutes * 60 + seconds
+
+def format_vtt_time(seconds):
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{secs:06.3f}"
+
+def clean_vtt_file(file_path):
+    """Clean duplicate subtitles from VTT file"""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Split into cues
+        cue_pattern = re.compile(r'(\d{2}:\d{2}:\d{2}\.\d{3}) --> (\d{2}:\d{2}:\d{2}\.\d{3}).*?\n(.*?)(?=\n\n|\Z)', re.DOTALL)
+        
+        cues = []
+        for match in cue_pattern.finditer(content):
+            start_str, end_str, text_block = match.groups()
+            start_time = parse_vtt_time(start_str)
+            
+            lines = text_block.strip().split('\n')
+            for line in lines:
+                embedded_time_match = re.search(r'<(\d{2}:\d{2}:\d{2}\.\d{3})>', line)
+                line_start_time = start_time
+                if embedded_time_match:
+                    line_start_time = parse_vtt_time(embedded_time_match.group(1))
+                
+                clean_text = re.sub(r'<[^>]+>', '', line).strip()
+                
+                if clean_text:
+                    cues.append({
+                        'text': clean_text,
+                        'start': line_start_time
+                    })
+
+        # Deduplicate and merge
+        unique_lines = []
+        
+        cues.sort(key=lambda x: x['start'])
+        
+        for cue in cues:
+            text = cue['text']
+            if unique_lines and unique_lines[-1]['text'] == text:
+                continue
+            unique_lines.append(cue)
+            
+        # Assign end times
+        final_cues = []
+        for i in range(len(unique_lines)):
+            current = unique_lines[i]
+            if i < len(unique_lines) - 1:
+                end_time = unique_lines[i+1]['start']
+            else:
+                end_time = current['start'] + 5.0
+                
+            if end_time <= current['start']:
+                end_time = current['start'] + 0.1
+                
+            final_cues.append({
+                'start': current['start'],
+                'end': end_time,
+                'text': current['text']
+            })
+            
+        # Write back
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write("WEBVTT\n\n")
+            for cue in final_cues:
+                f.write(f"{format_vtt_time(cue['start'])} --> {format_vtt_time(cue['end'])}\n")
+                f.write(f"{cue['text']}\n\n")
+                
+        logger.info(f"Successfully cleaned VTT file: {file_path}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to clean VTT file: {str(e)}")
+        return False
+
+@app.route('/api/download', methods=['POST'])
+def download_video():
+    """下载视频和字幕"""
+    try:
+        data = request.json
+        url = data.get('url')
+        
+        if not url:
+            return jsonify({'error': 'URL is required'}), 400
+
+        # 创建video目录
+        video_dir = Path('video')
+        video_dir.mkdir(exist_ok=True)
+
+        logger.info(f"开始下载视频: {url}")
+
+        # yt-dlp配置
+        ydl_opts = {
+            'format': 'bestvideo+bestaudio/best',  # 下载最佳质量
+            'merge_output_format': 'mp4',          # 强制合并为mp4
+            'outtmpl': str(video_dir / '%(title)s.%(ext)s'),
+            'writesubtitles': True,
+            'writeautomaticsub': True,
+            'subtitleslangs': ['zh-Hans'],  # 仅下载简体中文（包含自动翻译）
+            'sleep_interval_subtitles': 61, # 字幕下载延时61秒，避免429错误
+            'skip_download': False,
+            'noplaylist': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.youtube.com/',
+            }
+        }
+
+        info = None
+        filename = None
+
+        try:
+            logger.info("尝试下载视频和字幕...")
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filename = ydl.prepare_filename(info)
+        except Exception as e:
+            logger.error(f"下载失败: {str(e)}")
+            return jsonify({'error': str(e)}), 500
+        
+        # 查找生成的字幕文件
+        base_name = Path(filename).stem
+        
+        # 清理VTT字幕文件 (去除重复行)
+        for ext in ['.vtt']:
+             for lang in ['zh-Hans', 'zh-CN', 'zh-Hant', 'en']:
+                sub_path = video_dir / f"{base_name}.{lang}{ext}"
+                if sub_path.exists():
+                    clean_vtt_file(sub_path)
+
+        subtitle_files = []
+        
+        # 常见的字幕扩展名
+        for ext in ['.vtt', '.srt']:
+            # 检查可能的字幕文件
+            for lang in ['zh-Hans', 'zh-CN', 'zh-Hant', 'en']:
+                sub_path = video_dir / f"{base_name}.{lang}{ext}"
+                if sub_path.exists():
+                    subtitle_files.append({
+                        'lang': lang,
+                        'path': f"/video/{sub_path.name}",
+                        'name': sub_path.name
+                    })
+            
+            # 检查默认字幕 (没有语言后缀)
+            default_sub = video_dir / f"{base_name}{ext}"
+            if default_sub.exists():
+                subtitle_files.append({
+                    'lang': 'default',
+                    'path': f"/video/{default_sub.name}",
+                    'name': default_sub.name
+                })
+
+            return jsonify({
+                'success': True,
+                'video_url': f"/video/{Path(filename).name}",
+                'video_name': Path(filename).name,
+                'subtitles': subtitle_files
+            })
+
+    except Exception as e:
+        logger.error(f"下载失败: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/video/<path:filename>')
+def serve_video(filename):
+    """提供下载的视频文件"""
+    return send_from_directory('video', filename)
 
 
 if __name__ == '__main__':
