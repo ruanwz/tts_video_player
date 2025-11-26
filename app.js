@@ -611,6 +611,7 @@ class TTSVideoPlayer {
 
                 this.subtitles = subtitles;
                 this.originalSubtitles = JSON.parse(JSON.stringify(subtitles));
+                this.currentSubtitleLanguage = null; // 重置翻译语言状态
 
                 if (subtitles.length > 0) {
                     this.showStatus(`已加载下载的字幕: ${fileName}`);
@@ -679,6 +680,7 @@ class TTSVideoPlayer {
 
                 this.subtitles = subtitles;
                 this.originalSubtitles = JSON.parse(JSON.stringify(subtitles)); // 深拷贝保存原始字幕
+                this.currentSubtitleLanguage = null; // 重置翻译语言状态
 
                 if (subtitles.length === 0) {
                     this.showStatus(`字幕解析失败，请检查文件格式`, 'error');
@@ -1894,6 +1896,7 @@ class TTSVideoPlayer {
 
             // 更新字幕
             this.subtitles = translatedSubtitles;
+            this.currentSubtitleLanguage = targetLang; // 记录当前翻译语言
             this.updateTextTrack(this.subtitles);
             this.showStatus(`✓ 翻译完成！共 ${this.subtitles.length} 条`);
 
@@ -1979,7 +1982,7 @@ class TTSVideoPlayer {
 
 
     // 保存字幕
-    saveSubtitle() {
+    async saveSubtitle() {
         if (this.subtitles.length === 0) {
             this.showStatus('没有可保存的字幕', 'error');
             return;
@@ -1993,25 +1996,67 @@ class TTSVideoPlayer {
             vttContent += `${index + 1}\n${startTime} --> ${endTime}\n${sub.text}\n\n`;
         });
 
-        // 创建Blob并下载
-        const blob = new Blob([vttContent], { type: 'text/vtt' });
+        // 确定文件名
+        let fileName = 'subtitle.vtt';
+        if (this.currentVideoFile) {
+            // 获取视频文件名（不含扩展名）
+            const videoName = this.currentVideoFile.name.replace(/\.[^/.]+$/, "");
+
+            if (this.currentSubtitleLanguage) {
+                // 如果是翻译后的字幕，添加语言后缀
+                // 映射语言代码到标准后缀 (e.g. zh-CN -> zh-Hans)
+                let langSuffix = this.currentSubtitleLanguage;
+                if (langSuffix === 'zh-CN') langSuffix = 'zh-Hans';
+                if (langSuffix === 'zh-TW') langSuffix = 'zh-Hant';
+
+                fileName = `${videoName}.${langSuffix}.vtt`;
+            } else {
+                fileName = `${videoName}.vtt`;
+            }
+        }
+
+        // 保存到服务器
+        if (this.config.backendUrl) {
+            try {
+                this.showStatus('正在保存字幕到服务器...');
+                const response = await fetch(`${this.config.backendUrl}/api/save-subtitle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filename: fileName,
+                        content: vttContent
+                    })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    this.showStatus(`✓ 字幕已保存到服务器: ${fileName}`);
+                } else {
+                    throw new Error('Server returned ' + response.status);
+                }
+            } catch (e) {
+                console.error('保存字幕失败:', e);
+                this.showStatus('保存到服务器失败，尝试下载...', 'warning');
+                this.downloadSubtitleFile(fileName, vttContent);
+            }
+        } else {
+            // 如果没有配置后端，则直接下载
+            this.downloadSubtitleFile(fileName, vttContent);
+        }
+    }
+
+    // 辅助方法：下载字幕文件
+    downloadSubtitleFile(fileName, content) {
+        const blob = new Blob([content], { type: 'text/vtt' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-
-        // 文件名
-        let fileName = 'subtitle.vtt';
-        if (this.currentVideoFile) {
-            fileName = this.currentVideoFile.name.replace(/\.[^/.]+$/, "") + '.vtt';
-        }
-
         a.download = fileName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-
-        this.showStatus(`字幕已保存为 ${fileName}`);
+        this.showStatus(`字幕已下载: ${fileName}`);
     }
 
     // 格式化时间 (秒 -> HH:MM:SS.mmm)

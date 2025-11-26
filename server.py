@@ -732,6 +732,37 @@ def match_subtitle():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/save-subtitle', methods=['POST'])
+def save_subtitle():
+    """保存字幕文件到video目录"""
+    try:
+        data = request.json
+        filename = data.get('filename')
+        content = data.get('content')
+        
+        if not filename or not content:
+            return jsonify({'error': 'Missing filename or content'}), 400
+            
+        # 确保文件名安全
+        filename = Path(filename).name
+        
+        # 使用脚本所在目录下的video目录
+        video_dir = Path(__file__).parent / 'video'
+        video_dir.mkdir(exist_ok=True)
+        
+        file_path = video_dir / filename
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+            
+        logger.info(f"字幕已保存: {file_path}")
+        return jsonify({'success': True, 'path': f"/video/{filename}"})
+        
+    except Exception as e:
+        logger.error(f"保存字幕失败: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     print(f"""
