@@ -1845,6 +1845,7 @@ class TTSVideoPlayer {
     }
 
     // 翻译字幕
+    // 翻译字幕
     async translateSubtitles() {
         const targetLang = this.targetLanguage.value;
         if (!targetLang || this.originalSubtitles.length === 0) {
@@ -1858,48 +1859,46 @@ class TTSVideoPlayer {
         this.showStatus(`正在翻译 ${this.originalSubtitles.length} 条字幕到 ${this.getLanguageName(targetLang)}...`);
 
         try {
-            // 翻译所有字幕
-            const translatedSubtitles = [];
-            let successCount = 0;
-            let failCount = 0;
+            // 批量翻译
+            const allTexts = this.originalSubtitles.map(s => s.text);
+            const translatedTexts = [];
 
-            for (let i = 0; i < this.originalSubtitles.length; i++) {
-                const subtitle = this.originalSubtitles[i];
+            // 分批处理，每批50条，避免请求体过大
+            const batchSize = 50;
+            const totalBatches = Math.ceil(allTexts.length / batchSize);
+
+            for (let i = 0; i < allTexts.length; i += batchSize) {
+                const batch = allTexts.slice(i, i + batchSize);
+                const currentBatchNum = Math.floor(i / batchSize) + 1;
+
+                this.showStatus(`正在翻译第 ${currentBatchNum}/${totalBatches} 批...`);
 
                 try {
-                    const translatedText = await this.translateText(subtitle.text, targetLang);
-                    translatedSubtitles.push({
-                        ...subtitle,
-                        text: translatedText
-                    });
-                    successCount++;
-
-                    // 更新进度
-                    if ((i + 1) % 5 === 0 || i === this.originalSubtitles.length - 1) {
-                        this.showStatus(`翻译进度: ${i + 1}/${this.originalSubtitles.length} (成功: ${successCount}, 失败: ${failCount})`);
-                    }
-
-                    // 避免API限流，每5条字幕暂停一下
-                    if ((i + 1) % 5 === 0 && i < this.originalSubtitles.length - 1) {
-                        await this.sleep(1000); // 暂停1秒
-                    }
+                    const results = await this.translateBatch(batch, targetLang);
+                    translatedTexts.push(...results);
                 } catch (e) {
-                    console.error(`翻译第 ${i + 1} 条字幕失败:`, e);
-                    // 翻译失败时使用原文
-                    translatedSubtitles.push(subtitle);
-                    failCount++;
+                    console.error(`第 ${currentBatchNum} 批翻译失败:`, e);
+                    // 失败时使用原文填充，保持索引一致
+                    translatedTexts.push(...batch);
                 }
+
+                // 小短暂暂停，给UI喘息机会
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
 
-            // 更新字幕
-            this.subtitles = translatedSubtitles;
+            // 组装结果
+            const translatedSubtitles = this.originalSubtitles.map((subtitle, index) => ({
+                ...subtitle,
+                text: translatedTexts[index] || subtitle.text
+            }));
+
             // 更新字幕
             this.subtitles = translatedSubtitles;
             this.updateTextTrack(this.subtitles);
-            this.showStatus(`✓ 翻译完成！成功 ${successCount} 条，失败 ${failCount} 条`);
+            this.showStatus(`✓ 翻译完成！共 ${this.subtitles.length} 条`);
 
             // 更新UI显示
-            this.subtitleFileName.textContent = `✓ 已翻译为${this.getLanguageName(targetLang)} (${successCount} 条)`;
+            this.subtitleFileName.textContent = `✓ 已翻译为${this.getLanguageName(targetLang)}`;
 
         } catch (e) {
             console.error('翻译出错:', e);
@@ -1940,6 +1939,38 @@ class TTSVideoPlayer {
             return data.translatedText;
         } catch (e) {
             console.error('Google翻译失败:', e);
+            throw e;
+        }
+    }
+
+    // 批量翻译文本
+    async translateBatch(texts, targetLang) {
+        if (!this.config.backendUrl) {
+            throw new Error('请先配置后端服务地址');
+        }
+
+        try {
+            const response = await fetch(`${this.config.backendUrl}/api/translate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    texts: texts,
+                    target_lang: targetLang
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            return data.translatedTexts;
+        } catch (e) {
+            console.error('批量翻译失败:', e);
             throw e;
         }
     }

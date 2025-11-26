@@ -382,9 +382,10 @@ def translate():
     try:
         data = request.json
         text = data.get('text')
+        texts = data.get('texts') # 支持批量翻译
         target_lang = data.get('target_lang', 'zh-CN')
         
-        if not text:
+        if not text and not texts:
             return jsonify({'error': '缺少文本参数'}), 400
 
         # 映射语言代码
@@ -408,9 +409,17 @@ def translate():
         
         # 使用deep-translator调用Google翻译
         translator = GoogleTranslator(source='auto', target=target)
-        translated = translator.translate(text)
         
-        return jsonify({'translatedText': translated})
+        if texts:
+            # 批量翻译
+            # deep-translator的translate_batch可能有长度限制，建议分批处理
+            # 这里简单实现，如果列表过大可能需要进一步优化
+            translated = translator.translate_batch(texts)
+            return jsonify({'translatedTexts': translated})
+        else:
+            # 单条翻译
+            translated = translator.translate(text)
+            return jsonify({'translatedText': translated})
 
     except Exception as e:
         logger.error(f"翻译失败: {str(e)}")
