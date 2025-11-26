@@ -1,0 +1,36 @@
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 编辑器/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 测试视频文件（通常较大）
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.webm
+*.mp3
+*.vtt
+*.srt
+*.part
+
+# 视频目录
+video/
+
+# 临时文件
+*.tmp
+*.log
+
+# Node模块（如果将来添加）
+node_modules/
+package-lock.json
+
+# 构建输出（如果将来添加）
+dist/
+build/

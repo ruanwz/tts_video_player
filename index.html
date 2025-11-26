@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTS字幕视频播放器</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>TTS字幕视频播放器</h1>
+            <button id="settingsBtn" class="settings-btn" title="设置">⚙️</button>
+        </div>
+
+        <div class="download-section"
+            style="margin-bottom: 20px; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 1.1em;">下载视频</h3>
+            <div class="input-group" style="display: flex; gap: 10px;">
+                <input type="text" id="videoUrl" placeholder="输入视频URL (YouTube等)"
+                    style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <button id="downloadBtn" class="primary-btn"
+                    style="padding: 8px 16px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer;">下载并加载</button>
+            </div>
+            <div id="downloadStatus" class="status-text" style="margin-top: 10px; color: #666; font-size: 0.9em;"></div>
+        </div>
+
+        <div class="upload-section">
+            <div class="upload-group">
+                <label for="videoFile">选择视频文件:</label>
+                <input type="file" id="videoFile" accept="video/*">
+                <button id="generateSubtitleBtn" class="generate-btn" style="display: none;">🤖 自动生成字幕</button>
+                <button id="serverFilesBtn" class="btn secondary">📂 服务器文件</button>
+            </div>
+            <div class="upload-group">
+                <label for="subtitleFile">选择字幕文件 (SRT/VTT):</label>
+                <input type="file" id="subtitleFile" accept=".srt,.vtt">
+                <span id="subtitleFileName" class="file-name-display"></span>
+                <button id="saveSubtitleBtn" class="save-sub-btn" style="display: none;" title="保存字幕">💾</button>
+                <div class="translate-controls" id="translateControls" style="display: none;">
+                    <select id="targetLanguage" class="language-select">
+                        <option value="">选择目标语言</option>
+                        <option value="zh-CN">中文（简体）</option>
+                        <option value="zh-TW">中文（繁体）</option>
+                        <option value="en">英语</option>
+                        <option value="ja">日语</option>
+                        <option value="ko">韩语</option>
+                        <option value="es">西班牙语</option>
+                        <option value="fr">法语</option>
+                        <option value="de">德语</option>
+                        <option value="ru">俄语</option>
+                        <option value="ar">阿拉伯语</option>
+                    </select>
+                    <button id="translateBtn" class="translate-btn" disabled>🌐 翻译字幕</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 服务器文件模态框 -->
+        <div id="serverFilesModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>服务器视频文件</h2>
+                    <span class="close-btn" id="closeServerFiles">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div id="serverFileList" class="file-list">
+                        <div class="loading">加载中...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="player-container">
+            <video id="videoPlayer" controls>
+                <source src="" type="video/mp4">
+                您的浏览器不支持视频播放。
+            </video>
+
+
+        </div>
+
+        <div class="controls">
+            <button id="toggleAudioBtn" class="toggle-btn">
+                <span id="modeText">当前: 原声</span>
+            </button>
+            <div class="tts-controls">
+                <div class="control-group">
+                    <label for="ttsEngine">TTS引擎:</label>
+                    <select id="ttsEngine">
+                        <option value="browser">浏览器内置TTS (免费/离线)</option>
+                        <option value="edge">微软Edge TTS (高质量/在线)</option>
+                        <option value="google">Google TTS (在线)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="voiceSelect">TTS语音:</label>
+                    <select id="voiceSelect"></select>
+                    <button id="previewVoiceBtn" class="icon-btn" title="试听当前语音"
+                        style="margin-left: 5px; padding: 2px 6px;">🔊</button>
+                </div>
+
+                <div class="rate-mode-toggle">
+                    <label class="switch">
+                        <input type="checkbox" id="autoRateToggle">
+                        <span class="slider"></span>
+                    </label>
+                    <label for="autoRateToggle">智能语速控制</label>
+                </div>
+
+                <div class="control-group" id="speedStrategyGroup" style="display: none;">
+                    <label for="speedStrategy">控制策略:</label>
+                    <select id="speedStrategy">
+                        <option value="speed_up">加速语音 (推荐)</option>
+                        <option value="pause_video">暂停视频 (适合长句)</option>
+                    </select>
+                </div>
+
+                <div class="rate-control-group">
+                    <label for="rateControl">语速:</label>
+                    <input type="range" id="rateControl" min="0.5" max="2" step="0.1" value="1">
+                    <span id="rateValue">1.0</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="status" id="status"></div>
+    </div>
+
+    <!-- 设置模态框 -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>设置</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <h3>后端服务</h3>
+                    <div class="form-group">
+                        <label for="backendUrl">后端服务地址:</label>
+                        <input type="text" id="backendUrl" value="http://localhost:5001"
+                            placeholder="http://localhost:5001">
+                        <small>可选功能，用于自动生成字幕</small>
+                    </div>
+                    <button id="testBackendBtn" class="test-btn">测试连接</button>
+                    <span id="backendStatus" class="status-indicator"></span>
+                </div>
+
+                <div class="settings-section">
+                    <h3>字幕设置</h3>
+                    <div class="form-group">
+                        <label for="fontSizeRange">字幕字体大小: <span id="fontSizeValue">24</span>px</label>
+                        <input type="range" id="fontSizeRange" min="12" max="48" value="24" step="1"
+                            style="width: 100%;">
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>工具路径配置</h3>
+                    <div class="form-group">
+                        <label for="ffmpegPath">FFmpeg路径:</label>
+                        <input type="text" id="ffmpegPath" value="ffmpeg" placeholder="/usr/local/bin/ffmpeg">
+                        <small>用于提取视频音频</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="whisperPath">Whisper.cpp路径:</label>
+                        <input type="text" id="whisperPath" value="whisper" placeholder="/path/to/whisper.cpp/main">
+                        <small>用于语音转文字</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="modelPath">Whisper模型路径:</label>
+                        <input type="text" id="modelPath" value="" placeholder="/path/to/ggml-base.bin">
+                        <small>Whisper模型文件(.bin)</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="languageSelect">默认语言:</label>
+                        <select id="languageSelect">
+                            <option value="auto">自动检测</option>
+                            <option value="zh">中文</option>
+                            <option value="en">英语</option>
+                            <option value="ja">日语</option>
+                            <option value="ko">韩语</option>
+                        </select>
+                    </div>
+                    <button id="testToolsBtn" class="test-btn">测试工具</button>
+                    <div id="toolsStatus" class="tools-status"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="saveSettingsBtn" class="save-btn">保存设置</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
