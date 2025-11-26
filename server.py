@@ -655,7 +655,8 @@ def serve_video(filename):
 def list_videos():
     """列出服务器上的视频文件"""
     try:
-        video_dir = Path('video')
+        # 使用脚本所在目录下的video目录，确保路径正确
+        video_dir = Path(__file__).parent / 'video'
         if not video_dir.exists():
             return jsonify([])
             
